@@ -3,7 +3,14 @@ import {
   attendanceRecordSchema,
   attendanceSessionSchema,
   classGroupSchema,
+  scheduleCancellationSchema,
 } from "@finband/shared";
+import {
+  addDaysIso,
+  expandOccurrencesInRange,
+  cancellationKey,
+  mondayOfWeek,
+} from "../lib/schedule-occurrences.js";
 import {
   classIncludeSchedule,
   replaceScheduleSlots,
@@ -17,6 +24,91 @@ function stripSlots(data: Record<string, unknown>) {
 }
 
 export async function classRoutes(app: FastifyInstance) {
+  app.get("/schedule/occurrences", async (request, reply) => {
+    const q = request.query as { from?: string; to?: string; week?: string };
+    let from = q.from;
+    let to = q.to;
+    if (q.week) {
+      from = mondayOfWeek(q.week);
+      to = addDaysIso(from, 6);
+    }
+    if (!from || !to || !/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+      return reply.status(400).send({ error: "Indique from/to (YYYY-MM-DD) o week (YYYY-MM-DD)" });
+    }
+    if (from > to) {
+      return reply.status(400).send({ error: "from debe ser anterior a to" });
+    }
+
+    const slots = await prisma.classScheduleSlot.findMany({
+      include: {
+        classGroup: { include: { teacher: true } },
+      },
+    });
+    const cancellations = await prisma.classScheduleCancellation.findMany({
+      where: { sessionDate: { gte: from, lte: to } },
+    });
+    const cancelledMap = new Map(
+      cancellations.map((c) => [
+        cancellationKey(c.scheduleSlotId, c.sessionDate),
+        { id: c.id, reason: c.reason },
+      ]),
+    );
+
+    const mapped = slots.map((s) => ({
+      id: s.id,
+      dayOfWeek: s.dayOfWeek,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      classGroup: {
+        id: s.classGroup.id,
+        name: s.classGroup.name,
+        room: s.classGroup.room,
+        durationMinutes: s.classGroup.durationMinutes,
+        teacher: s.classGroup.teacher,
+      },
+    }));
+
+    return {
+      from,
+      to,
+      items: expandOccurrencesInRange(from, to, mapped, cancelledMap),
+    };
+  });
+
+  app.post("/schedule/cancellations", async (request, reply) => {
+    const parsed = scheduleCancellationSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
+    }
+    const slot = await prisma.classScheduleSlot.findUnique({
+      where: { id: parsed.data.scheduleSlotId },
+    });
+    if (!slot) return reply.status(404).send({ error: "Franja horaria no encontrada" });
+
+    return prisma.classScheduleCancellation.upsert({
+      where: {
+        scheduleSlotId_sessionDate: {
+          scheduleSlotId: parsed.data.scheduleSlotId,
+          sessionDate: parsed.data.sessionDate,
+        },
+      },
+      create: {
+        scheduleSlotId: parsed.data.scheduleSlotId,
+        sessionDate: parsed.data.sessionDate,
+        reason: parsed.data.reason,
+      },
+      update: { reason: parsed.data.reason },
+    });
+  });
+
+  app.delete("/schedule/cancellations/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const row = await prisma.classScheduleCancellation.findUnique({ where: { id } });
+    if (!row) return reply.status(404).send({ error: "Suspensión no encontrada" });
+    await prisma.classScheduleCancellation.delete({ where: { id } });
+    return { ok: true };
+  });
+
   app.get("/schedule/weekly", async () => {
     const groups = await prisma.classGroup.findMany({
       include: {

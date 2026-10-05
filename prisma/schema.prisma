@@ -163,8 +163,21 @@ model ClassScheduleSlot {
   dayOfWeek    Int
   startTime    String
   endTime      String
+  cancellations ClassScheduleCancellation[]
 
   @@unique([classGroupId, dayOfWeek, startTime])
+}
+
+/// Sesión concreta suspendida (festivo, libranza) sin borrar la franja semanal.
+model ClassScheduleCancellation {
+  id             String            @id @default(cuid())
+  scheduleSlotId String
+  scheduleSlot   ClassScheduleSlot @relation(fields: [scheduleSlotId], references: [id], onDelete: Cascade)
+  sessionDate    String
+  reason         String?
+  createdAt      DateTime          @default(now())
+
+  @@unique([scheduleSlotId, sessionDate])
 }
 
 model Enrollment {

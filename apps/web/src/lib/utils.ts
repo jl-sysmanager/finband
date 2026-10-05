@@ -77,6 +77,31 @@ export function todayISO() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
+function isoDayOfWeekUtc(iso: string): number {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y!, m! - 1, d!));
+  const dow = dt.getUTCDay();
+  return dow === 0 ? 7 : dow;
+}
+
+export function addDaysIso(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y!, m! - 1, d!));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+}
+
+export function mondayOfWeek(referenceIso: string): string {
+  const dow = isoDayOfWeekUtc(referenceIso);
+  return addDaysIso(referenceIso, -(dow - 1));
+}
+
+export function formatShortDate(iso: string) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y!, m! - 1, d!));
+  return dt.toLocaleDateString("es-ES", { day: "numeric", month: "short", timeZone: "UTC" });
+}
+
 export function buildQuery(params: Record<string, string | undefined>) {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {

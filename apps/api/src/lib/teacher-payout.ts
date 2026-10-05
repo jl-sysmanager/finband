@@ -1,3 +1,8 @@
+import {
+  cancellationKey,
+  monthBounds,
+  scheduleTotalsInRange,
+} from "./schedule-occurrences.js";
 import { prisma } from "./prisma.js";
 
 export type PayoutBasis =
@@ -32,47 +37,34 @@ export function countWorkDaysInMonth(yearMonth: string, weekdays: number[]): num
   return count;
 }
 
-function slotDurationHours(
-  startTime: string,
-  endTime: string,
-  fallbackMinutes: number,
-): number {
-  const [sh, sm] = startTime.split(":").map(Number);
-  const [eh, em] = endTime.split(":").map(Number);
-  let mins = eh! * 60 + em! - (sh! * 60 + sm!);
-  if (mins <= 0) mins = fallbackMinutes;
-  return mins / 60;
-}
-
 function weeksInMonth(yearMonth: string): number {
   const [y, m] = yearMonth.split("-").map(Number);
   const daysInMonth = new Date(y!, m!, 0).getDate();
   return daysInMonth / 7;
 }
 
-/** Sesiones e horas previstas en el mes según clases asignadas y franjas horarias. */
-export function scheduleTotalsForMonth(
+async function cancelledKeysForTeacher(teacherId: string, from: string, to: string) {
+  const rows = await prisma.classScheduleCancellation.findMany({
+    where: {
+      sessionDate: { gte: from, lte: to },
+      scheduleSlot: { classGroup: { teacherId } },
+    },
+  });
+  return new Set(rows.map((r) => cancellationKey(r.scheduleSlotId, r.sessionDate)));
+}
+
+/** Sesiones e horas del mes según franjas, excluyendo suspensiones puntuales. */
+export async function scheduleTotalsForMonth(
   classGroups: Array<{
     durationMinutes: number;
-    scheduleSlots: Array<{ dayOfWeek: number; startTime: string; endTime: string }>;
+    scheduleSlots: Array<{ id: string; dayOfWeek: number; startTime: string; endTime: string }>;
   }>,
   yearMonth: string,
+  teacherId: string,
 ) {
-  let sessionCount = 0;
-  let totalHours = 0;
-  const weekdays = new Set<number>();
-
-  for (const group of classGroups) {
-    for (const slot of group.scheduleSlots) {
-      const occ = countWorkDaysInMonth(yearMonth, [slot.dayOfWeek]);
-      sessionCount += occ;
-      totalHours += occ * slotDurationHours(slot.startTime, slot.endTime, group.durationMinutes);
-      weekdays.add(slot.dayOfWeek);
-    }
-  }
-
-  const workDays = countWorkDaysInMonth(yearMonth, [...weekdays]);
-  return { sessionCount, totalHours, workDays, classCount: classGroups.length };
+  const { from, to } = monthBounds(yearMonth);
+  const cancelled = await cancelledKeysForTeacher(teacherId, from, to);
+  return scheduleTotalsInRange(from, to, classGroups, cancelled);
 }
 
 export function computeBaseFromTeacherConfig(
@@ -134,7 +126,7 @@ export async function calculateTeacherPayout(
     throw new Error("Profesor no encontrado");
   }
 
-  const schedule = scheduleTotalsForMonth(teacher.classGroups, yearMonth);
+  const schedule = await scheduleTotalsForMonth(teacher.classGroups, yearMonth, teacherId);
   const { baseAmount, basis } = computeBaseFromTeacherConfig(teacher, schedule, yearMonth);
 
   const transportAmount = (teacher.transportCostPerDay ?? 0) * schedule.workDays;
