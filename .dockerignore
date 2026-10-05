@@ -1,0 +1,8 @@
+node_modules
+apps/web/dist
+apps/api/dist
+packages/shared/dist
+data/*.db
+data/*.db-journal
+.git
+.cursor

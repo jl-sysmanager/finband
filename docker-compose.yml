@@ -1,0 +1,14 @@
+services:
+  finband:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: "file:/app/data/finband.db"
+      JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
+      ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-admin123}"
+      NODE_ENV: production
+      SERVE_WEB: "true"
+    volumes:
+      - ./data:/app/data

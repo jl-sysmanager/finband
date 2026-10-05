@@ -1,0 +1,288 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  READONLY
+}
+
+enum StudentStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ClassType {
+  INDIVIDUAL
+  COLECTIVA
+  BANDA
+  LENGUAJE
+  ENSAYO
+}
+
+enum PaymentMethod {
+  EFECTIVO
+  TRANSFERENCIA
+  BIZUM
+  TARJETA
+}
+
+enum FeeStatus {
+  PENDING
+  PARTIAL
+  PAID
+}
+
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+enum PayoutStatus {
+  PENDING
+  PARTIAL
+  PAID
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  role         UserRole @default(ADMIN)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model SchoolSettings {
+  id              String  @id @default("default")
+  name            String  @default("Escuela de Música")
+  address         String?
+  phone           String?
+  email           String?
+  logoBase64      String?
+  activeYearId    String? @unique
+  activeYear      AcademicYear? @relation("ActiveYear", fields: [activeYearId], references: [id])
+  updatedAt       DateTime @updatedAt
+}
+
+model AcademicYear {
+  id        String   @id @default(cuid())
+  name      String
+  startDate DateTime
+  endDate   DateTime
+  isActive  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  activeFor SchoolSettings? @relation("ActiveYear")
+}
+
+model IncomeCategory {
+  id        String        @id @default(cuid())
+  name      String        @unique
+  sortOrder Int           @default(0)
+  entries   IncomeEntry[]
+}
+
+model ExpenseCategory {
+  id        String         @id @default(cuid())
+  name      String         @unique
+  sortOrder Int            @default(0)
+  entries   ExpenseEntry[]
+}
+
+model Teacher {
+  id             String        @id @default(cuid())
+  firstName      String
+  lastName       String
+  phone          String?
+  email          String?
+  specialty      String?
+  hourlyRate     Float         @default(0)
+  monthlySalary  Float?
+  costPerClass   Float?
+  weeklyHours    Float?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+  classGroups    ClassGroup[]
+  primaryStudents Student[]    @relation("PrimaryTeacher")
+  payouts        TeacherPayout[]
+}
+
+model Student {
+  id               String            @id @default(cuid())
+  firstName        String
+  lastName         String
+  birthDate        DateTime?
+  phone            String?
+  email            String?
+  address          String?
+  legalGuardian    String?
+  notes            String?
+  mainInstrument   String?
+  level            String?
+  primaryTeacherId String?
+  primaryTeacher   Teacher?          @relation("PrimaryTeacher", fields: [primaryTeacherId], references: [id])
+  monthlyFee       Float?
+  status           StudentStatus     @default(ACTIVE)
+  deletedAt        DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  enrollments      Enrollment[]
+  discounts        StudentDiscount[]
+  fees             StudentFee[]
+}
+
+model ClassGroup {
+  id              String             @id @default(cuid())
+  name            String
+  type            ClassType
+  teacherId       String
+  teacher         Teacher            @relation(fields: [teacherId], references: [id])
+  room            String?
+  scheduleJson    String             @default("[]")
+  durationMinutes Int                @default(60)
+  maxStudents     Int                @default(1)
+  notes           String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  enrollments     Enrollment[]
+  sessions        AttendanceSession[]
+}
+
+model Enrollment {
+  id           String     @id @default(cuid())
+  studentId    String
+  classGroupId String
+  student      Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classGroup   ClassGroup @relation(fields: [classGroupId], references: [id], onDelete: Cascade)
+  enrolledAt   DateTime   @default(now())
+  active       Boolean    @default(true)
+
+  @@unique([studentId, classGroupId])
+}
+
+model TariffRule {
+  id          String     @id @default(cuid())
+  name        String
+  instrument  String?
+  level       String?
+  classType   ClassType?
+  amount      Float
+  priority    Int        @default(0)
+  active      Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model StudentDiscount {
+  id        String       @id @default(cuid())
+  studentId String
+  student   Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  name      String
+  type      DiscountType
+  value     Float
+  isScholarship Boolean  @default(false)
+  validFrom DateTime?
+  validTo   DateTime?
+  active    Boolean      @default(true)
+  createdAt DateTime     @default(now())
+}
+
+model StudentFee {
+  id          String           @id @default(cuid())
+  studentId   String
+  student     Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  yearMonth   String
+  baseAmount  Float
+  discountAmount Float         @default(0)
+  totalAmount Float
+  amountPaid  Float            @default(0)
+  status      FeeStatus        @default(PENDING)
+  dueDate     DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  payments    StudentPayment[]
+  lineItems   String?
+
+  @@unique([studentId, yearMonth])
+}
+
+model StudentPayment {
+  id        String        @id @default(cuid())
+  feeId     String
+  fee       StudentFee    @relation(fields: [feeId], references: [id], onDelete: Cascade)
+  amount    Float
+  method    PaymentMethod
+  paidAt    DateTime      @default(now())
+  notes     String?
+  createdAt DateTime      @default(now())
+}
+
+model TeacherPayout {
+  id          String        @id @default(cuid())
+  teacherId   String
+  teacher     Teacher       @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  yearMonth   String
+  amount      Float
+  amountPaid  Float         @default(0)
+  status      PayoutStatus  @default(PENDING)
+  notes       String?
+  paidAt      DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([teacherId, yearMonth])
+}
+
+model IncomeEntry {
+  id         String         @id @default(cuid())
+  date       DateTime
+  concept    String
+  categoryId String
+  category   IncomeCategory @relation(fields: [categoryId], references: [id])
+  amount     Float
+  method     PaymentMethod?
+  notes      String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+}
+
+model ExpenseEntry {
+  id         String          @id @default(cuid())
+  date       DateTime
+  concept    String
+  categoryId String
+  category   ExpenseCategory @relation(fields: [categoryId], references: [id])
+  amount     Float
+  notes      String?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+}
+
+model AttendanceSession {
+  id           String             @id @default(cuid())
+  classGroupId String
+  classGroup   ClassGroup         @relation(fields: [classGroupId], references: [id], onDelete: Cascade)
+  sessionDate  DateTime
+  notes        String?
+  createdAt    DateTime           @default(now())
+  records      AttendanceRecord[]
+
+  @@unique([classGroupId, sessionDate])
+}
+
+model AttendanceRecord {
+  id        String            @id @default(cuid())
+  sessionId String
+  session   AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  studentId String
+  present   Boolean           @default(true)
+  notes     String?
+
+  @@unique([sessionId, studentId])
+}
