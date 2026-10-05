@@ -123,6 +123,32 @@ export async function paymentRoutes(app: FastifyInstance) {
     return payment;
   });
 
+  app.delete("/student-fees/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const fee = await prisma.studentFee.findUnique({
+      where: { id },
+      include: { payments: true },
+    });
+    if (!fee) return reply.status(404).send({ error: "Cuota no encontrada" });
+    await prisma.studentFee.delete({ where: { id } });
+    return { ok: true, removedPayments: fee.payments.length };
+  });
+
+  app.get("/teacher-payouts/calculate", async (request, reply) => {
+    const q = request.query as { teacherId?: string; yearMonth?: string };
+    if (!q.teacherId || !q.yearMonth) {
+      return reply.status(400).send({ error: "teacherId y yearMonth requeridos" });
+    }
+    if (!/^\d{4}-\d{2}$/.test(q.yearMonth)) {
+      return reply.status(400).send({ error: "yearMonth inválido (YYYY-MM)" });
+    }
+    try {
+      return await calculateTeacherPayout(q.teacherId, q.yearMonth);
+    } catch {
+      return reply.status(404).send({ error: "Profesor no encontrado" });
+    }
+  });
+
   app.delete("/student-payments/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     const existing = await prisma.studentPayment.findUnique({ where: { id } });
@@ -166,6 +192,10 @@ export async function paymentRoutes(app: FastifyInstance) {
     for (const t of teachers) {
       const calc = await calculateTeacherPayout(t.id, yearMonth);
       if (calc.amount <= 0) continue;
+      const existing = await prisma.teacherPayout.findUnique({
+        where: { teacherId_yearMonth: { teacherId: t.id, yearMonth } },
+      });
+      const amountPaid = existing ? Math.min(existing.amountPaid, calc.amount) : 0;
       await prisma.teacherPayout.upsert({
         where: { teacherId_yearMonth: { teacherId: t.id, yearMonth } },
         create: {
@@ -175,12 +205,16 @@ export async function paymentRoutes(app: FastifyInstance) {
           transportAmount: calc.transportAmount,
           workDays: calc.workDays,
           amount: calc.amount,
+          amountPaid: 0,
+          status: payoutStatus(calc.amount, 0),
         },
         update: {
           baseAmount: calc.baseAmount,
           transportAmount: calc.transportAmount,
           workDays: calc.workDays,
           amount: calc.amount,
+          amountPaid,
+          status: payoutStatus(calc.amount, amountPaid),
         },
       });
       count++;
@@ -225,6 +259,7 @@ export async function paymentRoutes(app: FastifyInstance) {
       data: {
         amountPaid,
         status: payoutStatus(payout.amount, amountPaid),
+        paidAt: amountPaid <= 0 ? null : payout.paidAt,
         notes: body.notes === undefined ? undefined : body.notes,
       },
     });

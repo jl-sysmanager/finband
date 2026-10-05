@@ -12,6 +12,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
+    "manual:pdf": "tsx scripts/generate-user-manual.ts",
     "db:generate": "prisma generate",
     "postinstall": "prisma generate"
   },

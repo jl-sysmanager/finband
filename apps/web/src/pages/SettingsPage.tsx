@@ -11,10 +11,10 @@ import {
   DataTableTh,
 } from "@/components/list/DataTable";
 import { PageHeader } from "@/components/list/PageHeader";
-import { ApiError, api } from "@/lib/api";
+import { ApiError, api, downloadUrl, uploadBackup } from "@/lib/api";
 import { selectClassName } from "@/lib/form-classes";
 import { useAuth } from "@/stores/auth";
-import { Pencil, Trash2 } from "lucide-react";
+import { Download, Pencil, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
 
 export function SettingsPage() {
@@ -30,6 +30,10 @@ export function SettingsPage() {
     role: "READONLY",
   });
   const currentUser = useAuth((s) => s.user);
+  const [backupFile, setBackupFile] = useState<File | null>(null);
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const [backupOk, setBackupOk] = useState<string | null>(null);
+  const [restorePending, setRestorePending] = useState(false);
 
   const school = useQuery({
     queryKey: ["school"],
@@ -180,6 +184,75 @@ export function SettingsPage() {
           </Button>
         ) : null}
       </form>
+
+      {isAdmin ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Copia de seguridad</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm">
+            <p className="text-muted-foreground">
+              Descargue una copia completa de la base de datos (alumnos, pagos, configuración).
+              Guarde el archivo en un lugar seguro. La restauración sustituye todos los datos
+              actuales por los del archivo seleccionado.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild variant="outline">
+                <a href={downloadUrl("/admin/backup/database")} download>
+                  <Download className="h-4 w-4" /> Descargar copia de seguridad
+                </a>
+              </Button>
+            </div>
+            <div className="space-y-2 border-t border-border pt-4">
+              <Label>Restaurar desde archivo .sqlite</Label>
+              <Input
+                type="file"
+                accept=".sqlite,.db,application/octet-stream"
+                onChange={(e) => {
+                  setBackupFile(e.target.files?.[0] ?? null);
+                  setBackupError(null);
+                  setBackupOk(null);
+                }}
+              />
+              <Button
+                variant="destructive"
+                disabled={!backupFile || restorePending}
+                onClick={async () => {
+                  if (!backupFile) return;
+                  if (
+                    !confirm(
+                      "¿Restaurar esta copia? Se perderán los datos actuales no incluidos en el archivo. Se guardará una copia de seguridad automática antes de continuar.",
+                    )
+                  ) {
+                    return;
+                  }
+                  setRestorePending(true);
+                  setBackupError(null);
+                  setBackupOk(null);
+                  try {
+                    const res = await uploadBackup(backupFile);
+                    setBackupOk(res.message ?? "Copia restaurada correctamente.");
+                    setBackupFile(null);
+                    qc.clear();
+                    window.setTimeout(() => window.location.reload(), 1500);
+                  } catch (err) {
+                    setBackupError(
+                      err instanceof ApiError ? err.message : "No se pudo restaurar la copia",
+                    );
+                  } finally {
+                    setRestorePending(false);
+                  }
+                }}
+              >
+                <Upload className="h-4 w-4" />{" "}
+                {restorePending ? "Restaurando…" : "Restaurar copia de seguridad"}
+              </Button>
+            </div>
+            {backupError ? <p className="text-destructive">{backupError}</p> : null}
+            {backupOk ? <p className="text-income">{backupOk}</p> : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {isAdmin ? (
         <Card>

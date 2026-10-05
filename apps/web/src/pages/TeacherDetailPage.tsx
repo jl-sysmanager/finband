@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
+import { MonthSelect } from "@/components/form/MonthSelect";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, api } from "@/lib/api";
-import { formatMoney } from "@/lib/utils";
+import { buildQuery, currentYearMonth, formatMoney } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 import { useState } from "react";
 
@@ -16,10 +17,39 @@ export function TeacherDetailPage() {
   const qc = useQueryClient();
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [previewMonth, setPreviewMonth] = useState(currentYearMonth());
+
+  const PAYOUT_BASIS_LABELS: Record<string, string> = {
+    monthlySalary: "Salario mensual fijo",
+    costPerClass: "Coste por sesión según clases y horario",
+    hourlyRate: "Horas impartidas según horario × €/hora",
+    hourlyWeeklyEstimate: "Horas semanales configuradas × €/hora",
+    none: "Sin importe base (revisar tarifas del profesor)",
+  };
 
   const teacher = useQuery({
     queryKey: ["teacher", id],
     queryFn: () => api<Record<string, unknown>>(`/teachers/${id}`),
+    enabled: !isNew && !!id,
+  });
+
+  const payoutPreview = useQuery({
+    queryKey: ["payout-calc", id, previewMonth],
+    queryFn: () =>
+      api<{
+        baseAmount: number;
+        transportAmount: number;
+        workDays: number;
+        amount: number;
+        basis: string;
+        sessionCount: number;
+        totalHours: number;
+      }>(
+        `/payments/teacher-payouts/calculate${buildQuery({
+          teacherId: id,
+          yearMonth: previewMonth,
+        })}`,
+      ),
     enabled: !isNew && !!id,
   });
 
@@ -123,10 +153,48 @@ export function TeacherDetailPage() {
             ))}
           </CardContent>
         </Card>
+        {!isNew ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Cálculo de liquidación</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <p className="text-muted-foreground">
+                Se usa, por este orden, el primer importe configurado en la ficha: salario mensual,
+                coste por clase (sesiones del mes según horario), o precio por hora (horas del
+                horario). El transporte se suma por jornadas con clase ese mes.
+              </p>
+              <div className="max-w-xs space-y-1">
+                <Label>Mes a simular</Label>
+                <MonthSelect value={previewMonth} onChange={setPreviewMonth} />
+              </div>
+              {payoutPreview.data ? (
+                <ul className="space-y-1 rounded-lg border border-border p-3">
+                  <li>
+                    <span className="text-muted-foreground">Criterio: </span>
+                    {PAYOUT_BASIS_LABELS[payoutPreview.data.basis] ?? payoutPreview.data.basis}
+                  </li>
+                  <li>
+                    Sesiones en el mes: {payoutPreview.data.sessionCount} · Horas:{" "}
+                    {payoutPreview.data.totalHours.toFixed(1)} h
+                  </li>
+                  <li>Base: {formatMoney(payoutPreview.data.baseAmount)}</li>
+                  <li>
+                    Transporte ({payoutPreview.data.workDays} jornadas):{" "}
+                    {formatMoney(payoutPreview.data.transportAmount)}
+                  </li>
+                  <li className="font-medium">
+                    Total liquidación: {formatMoney(payoutPreview.data.amount)}
+                  </li>
+                </ul>
+              ) : null}
+            </CardContent>
+          </Card>
+        ) : null}
         {!isNew && t?.payouts ? (
           <Card>
             <CardHeader>
-              <CardTitle>Liquidaciones</CardTitle>
+              <CardTitle>Liquidaciones registradas</CardTitle>
             </CardHeader>
             <CardContent>
               <ul className="space-y-1 text-sm">

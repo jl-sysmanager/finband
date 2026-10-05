@@ -20,6 +20,7 @@ import { settingsRoutes } from "./routes/settings.js";
 import { studentRoutes } from "./routes/students.js";
 import { tariffRoutes } from "./routes/tariffs.js";
 import { teacherRoutes } from "./routes/teachers.js";
+import { backupRoutes } from "./routes/backup.js";
 import { userRoutes } from "./routes/users.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -62,6 +63,7 @@ await app.register(
       await secured.register(async (adminScope) => {
         adminScope.addHook("preHandler", requireAdmin);
         await adminScope.register(userRoutes, { prefix: "/users" });
+        await adminScope.register(backupRoutes, { prefix: "/backup" });
       }, { prefix: "/admin" });
     });
   },

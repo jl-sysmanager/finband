@@ -37,6 +37,14 @@ El seed incluye **datos mock** (alumnos, profesores, clases, cuotas, ingresos/ga
 - Frontend: [http://localhost:5173](http://localhost:5173)
 - API: [http://localhost:3000](http://localhost:3000)
 
+## Manual de usuario (PDF)
+
+```bash
+npm run manual:pdf
+```
+
+Genera `docs/Finband-manual-de-uso.pdf` (guía por menús y control financiero para usuarios de la escuela).
+
 ## Stack
 
 React · Vite · TypeScript · Tailwind · Fastify · Prisma · SQLite

@@ -41,3 +41,23 @@ export async function api<T>(
 export function downloadUrl(path: string) {
   return `/api/v1${path}`;
 }
+
+export async function uploadBackup(file: File): Promise<{ ok: boolean; message?: string }> {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch("/api/v1/admin/backup/restore", {
+    method: "POST",
+    credentials: "include",
+    body: fd,
+  });
+  if (!res.ok) {
+    let body: { error?: string } = {};
+    try {
+      body = await res.json();
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(body.error ?? "Error al restaurar", res.status);
+  }
+  return res.json() as Promise<{ ok: boolean; message?: string }>;
+}

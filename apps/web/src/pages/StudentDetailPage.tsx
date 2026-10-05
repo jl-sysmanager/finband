@@ -8,6 +8,7 @@ import { ApiError, api } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 import { FEE_STATUS_LABELS } from "@finband/shared";
+import { Trash2 } from "lucide-react";
 import { useState } from "react";
 
 export function StudentDetailPage() {
@@ -48,6 +49,11 @@ export function StudentDetailPage() {
       qc.invalidateQueries({ queryKey: ["students"] });
       navigate("/alumnos");
     },
+  });
+
+  const deleteFee = useMutation({
+    mutationFn: (feeId: string) => api(`/payments/student-fees/${feeId}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["student", id] }),
   });
 
   const s = student.data as {
@@ -221,6 +227,7 @@ export function StudentDetailPage() {
                             <th>Total</th>
                             <th>Pagado</th>
                             <th>Estado</th>
+                            {isAdmin ? <th className="w-10" /> : null}
                           </tr>
                         </thead>
                         <tbody>
@@ -230,6 +237,22 @@ export function StudentDetailPage() {
                               <td>{formatMoney(f.totalAmount)}</td>
                               <td>{formatMoney(f.amountPaid)}</td>
                               <td>{FEE_STATUS_LABELS[f.status]}</td>
+                              {isAdmin ? (
+                                <td className="py-1 text-right">
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    aria-label="Eliminar cuota"
+                                    onClick={() => {
+                                      if (confirm("¿Eliminar esta cuota? Se borrarán también los cobros asociados.")) {
+                                        deleteFee.mutate(f.id);
+                                      }
+                                    }}
+                                  >
+                                    <Trash2 className="h-4 w-4 text-expense" />
+                                  </Button>
+                                </td>
+                              ) : null}
                             </tr>
                           ))}
                         </tbody>

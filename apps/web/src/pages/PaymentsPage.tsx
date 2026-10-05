@@ -155,6 +155,24 @@ export function PaymentsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["teacher-payouts"] }),
   });
 
+  const deleteFee = useMutation({
+    mutationFn: (id: string) => api(`/payments/student-fees/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["student-fees"] });
+      setPayFeeId("");
+      setPayAmount("");
+    },
+  });
+
+  const resetPayoutPayment = useMutation({
+    mutationFn: (id: string) =>
+      api(`/payments/teacher-payouts/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ amountPaid: 0 }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["teacher-payouts"] }),
+  });
+
   function selectFee(f: StudentFee) {
     setPayFeeId(f.id);
     const pending = Math.max(0, f.totalAmount - f.amountPaid);
@@ -334,18 +352,37 @@ export function PaymentsPage() {
                         </Badge>
                       </DataTableTd>
                       <DataTableTd className="text-right">
-                        {isAdmin && pending > 0 ? (
-                          <Button
-                            size="sm"
-                            variant={selected ? "default" : "outline"}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              selectFee(f);
-                            }}
-                          >
-                            Cobrar
-                          </Button>
-                        ) : null}
+                        <div className="flex justify-end gap-1">
+                          {isAdmin && pending > 0 ? (
+                            <Button
+                              size="sm"
+                              variant={selected ? "default" : "outline"}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                selectFee(f);
+                              }}
+                            >
+                              Cobrar
+                            </Button>
+                          ) : null}
+                          {isAdmin ? (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              aria-label="Eliminar cuota"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const msg =
+                                  f.payments.length > 0
+                                    ? `¿Eliminar la cuota y sus ${f.payments.length} cobro(s)?`
+                                    : "¿Eliminar esta cuota?";
+                                if (confirm(msg)) deleteFee.mutate(f.id);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 text-expense" />
+                            </Button>
+                          ) : null}
+                        </div>
                       </DataTableTd>
                     </DataTableRow>
                   );
@@ -494,6 +531,20 @@ export function PaymentsPage() {
                             }}
                           >
                             Marcar pagado
+                          </Button>
+                        ) : null}
+                        {isAdmin && p.amountPaid > 0 ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={resetPayoutPayment.isPending}
+                            onClick={() => {
+                              if (confirm("¿Anular el pago registrado y dejar la liquidación pendiente?")) {
+                                resetPayoutPayment.mutate(p.id);
+                              }
+                            }}
+                          >
+                            Anular pago
                           </Button>
                         ) : null}
                         {isAdmin ? (
