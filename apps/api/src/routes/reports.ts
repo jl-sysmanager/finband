@@ -1,7 +1,15 @@
 import ExcelJS from "exceljs";
-import PDFDocument from "pdfkit";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import {
+  createPdf,
+  drawMetaGrid,
+  drawTable,
+  drawTotalBar,
+  finalizeProfessionalPdf,
+  formatEuro,
+} from "../lib/pdf-template.js";
 import { prisma } from "../lib/prisma.js";
+import { receiptRoutes } from "./receipts.js";
 
 function monthRange(yearMonth: string) {
   const [y, m] = yearMonth.split("-").map(Number);
@@ -34,10 +42,13 @@ async function monthlyBalance(yearMonth: string) {
   };
 }
 
-function sendPdf(reply: FastifyReply, filename: string, buffer: Buffer) {
+function sendPdf(reply: FastifyReply, filename: string, buffer: Buffer, inline = false) {
+  const disposition = inline
+    ? "inline"
+    : `attachment; filename="${filename}"`;
   return reply
     .header("Content-Type", "application/pdf")
-    .header("Content-Disposition", `attachment; filename="${filename}"`)
+    .header("Content-Disposition", disposition)
     .send(buffer);
 }
 
@@ -51,26 +62,26 @@ function sendXlsx(reply: FastifyReply, filename: string, buffer: Buffer) {
     .send(buffer);
 }
 
-function pdfBalance(title: string, rows: Array<[string, number]>): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 50 });
-    const chunks: Buffer[] = [];
-    doc.on("data", (c) => chunks.push(c));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
-    doc.fontSize(18).text(title);
-    doc.moveDown();
-    doc.fontSize(11);
-    for (const [label, amount] of rows) {
-      doc.text(`${label}: ${amount.toFixed(2)} €`);
+async function pdfReport(title: string, rows: Array<[string, number]>, reference?: string) {
+  const doc = createPdf();
+  return finalizeProfessionalPdf(doc, title, async (d) => {
+    drawTable(
+      d,
+      ["Concepto", "Importe"],
+      rows.map(([label, amount]) => [label, formatEuro(amount)]),
+      { alignRightFrom: 1 },
+    );
+    const balanceRow = rows.find(([label]) => label.toLowerCase().includes("balance"));
+    if (balanceRow) {
+      drawTotalBar(d, balanceRow[0], balanceRow[1]);
     }
-    doc.end();
-  });
+  }, reference);
 }
 
 export async function reportRoutes(app: FastifyInstance) {
+  await app.register(receiptRoutes, { prefix: "/receipts" });
   app.get("/balance-monthly", async (request: FastifyRequest, reply: FastifyReply) => {
-    const q = request.query as { yearMonth?: string; format?: string };
+    const q = request.query as { yearMonth?: string; format?: string; inline?: string };
     const yearMonth =
       q.yearMonth ??
       `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
@@ -89,20 +100,25 @@ export async function reportRoutes(app: FastifyInstance) {
     }
 
     if (q.format === "pdf") {
-      const pdf = await pdfBalance(`Balance mensual ${yearMonth}`, [
-        ["Ingresos", data.income],
-        ["Gastos", data.expense],
-        ["Cobros cuotas", data.feeCollections],
-        ["Balance", data.balance],
-      ]);
-      return sendPdf(reply, `balance-${yearMonth}.pdf`, pdf);
+      const pdf = await pdfReport(
+        `Balance mensual ${yearMonth}`,
+        [
+          ["Ingresos", data.income],
+          ["Gastos", data.expense],
+          ["Cobros cuotas", data.feeCollections],
+          ["Balance", data.balance],
+        ],
+        yearMonth,
+      );
+      const inline = q.inline === "1" || q.inline === "true";
+      return sendPdf(reply, `balance-${yearMonth}.pdf`, pdf, inline);
     }
 
     return { yearMonth, ...data };
   });
 
   app.get("/balance-annual", async (request: FastifyRequest, reply: FastifyReply) => {
-    const q = request.query as { year?: string; format?: string };
+    const q = request.query as { year?: string; format?: string; inline?: string };
     const year = Number(q.year) || new Date().getFullYear();
     const rows = [];
     for (let m = 1; m <= 12; m++) {
@@ -192,7 +208,7 @@ export async function reportRoutes(app: FastifyInstance) {
   });
 
   app.get("/unpaid", async (request: FastifyRequest, reply: FastifyReply) => {
-    const q = request.query as { format?: string };
+    const q = request.query as { format?: string; inline?: string };
     const fees = await prisma.studentFee.findMany({
       where: { status: { in: ["PENDING", "PARTIAL"] } },
       include: { student: true },
@@ -206,11 +222,21 @@ export async function reportRoutes(app: FastifyInstance) {
     }));
 
     if (q.format === "pdf") {
-      const pdf = await pdfBalance(
-        "Listado de impagos",
-        rows.map((r) => [`${r.student} (${r.month})`, r.pending]),
-      );
-      return sendPdf(reply, "impagos.pdf", pdf);
+      const doc = createPdf();
+      const pdf = await finalizeProfessionalPdf(doc, "Listado de impagos", async (d) => {
+        drawMetaGrid(d, [
+          ["Registros", String(rows.length)],
+          ["Generado", new Date().toLocaleDateString("es-ES")],
+        ]);
+        drawTable(
+          d,
+          ["Alumno", "Mes", "Pendiente", "Estado"],
+          rows.map((r) => [r.student, r.month, formatEuro(r.pending), r.status]),
+          { alignRightFrom: 2 },
+        );
+      });
+      const inline = q.inline === "1" || q.inline === "true";
+      return sendPdf(reply, "impagos.pdf", pdf, inline);
     }
     if (q.format === "xlsx") {
       const wb = new ExcelJS.Workbook();
@@ -224,7 +250,7 @@ export async function reportRoutes(app: FastifyInstance) {
   });
 
   app.get("/evolution", async (request: FastifyRequest, reply: FastifyReply) => {
-    const q = request.query as { format?: string };
+    const q = request.query as { format?: string; inline?: string };
     const now = new Date();
     const rows = [];
     for (let i = 11; i >= 0; i--) {
@@ -233,11 +259,12 @@ export async function reportRoutes(app: FastifyInstance) {
       rows.push({ month: ym, ...(await monthlyBalance(ym)) });
     }
     if (q.format === "pdf") {
-      const pdf = await pdfBalance(
+      const pdf = await pdfReport(
         "Evolución ingresos y gastos (12 meses)",
         rows.map((r) => [r.month, r.income - r.expense]),
       );
-      return sendPdf(reply, "evolucion.pdf", pdf);
+      const inline = q.inline === "1" || q.inline === "true";
+      return sendPdf(reply, "evolucion.pdf", pdf, inline);
     }
     return rows;
   });

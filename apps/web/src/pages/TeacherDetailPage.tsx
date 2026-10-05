@@ -4,9 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { formatMoney } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
+import { useState } from "react";
 
 export function TeacherDetailPage() {
   const { id } = useParams();
@@ -14,6 +15,7 @@ export function TeacherDetailPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const teacher = useQuery({
     queryKey: ["teacher", id],
@@ -29,6 +31,7 @@ export function TeacherDetailPage() {
     onSuccess: (data: { id?: string }) => {
       qc.invalidateQueries({ queryKey: ["teachers"] });
       if (isNew && data?.id) navigate(`/profesores/${data.id}`);
+      else qc.invalidateQueries({ queryKey: ["teacher", id] });
     },
   });
 
@@ -43,20 +46,46 @@ export function TeacherDetailPage() {
     costPerClass?: number;
     weeklyHours?: number;
     classGroups?: Array<{ name: string }>;
-    payouts?: Array<{ yearMonth: string; amount: number; amountPaid: number; status: string }>;
+    transportCostPerDay?: number;
+    payouts?: Array<{
+      yearMonth: string;
+      amount: number;
+      baseAmount: number;
+      transportAmount: number;
+      workDays: number;
+      amountPaid: number;
+      status: string;
+    }>;
   };
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!isAdmin) return;
+    setSaveError(null);
     const fd = new FormData(e.currentTarget);
     const body: Record<string, unknown> = {};
     fd.forEach((v, k) => {
-      if (["hourlyRate", "monthlySalary", "costPerClass", "weeklyHours"].includes(k)) {
-        body[k] = v ? Number(v) : null;
+      if (
+        ["hourlyRate", "monthlySalary", "costPerClass", "weeklyHours", "transportCostPerDay"].includes(
+          k,
+        )
+      ) {
+        body[k] = v ? Number(v) : k === "transportCostPerDay" ? 0 : null;
       } else body[k] = v || null;
     });
-    await save.mutateAsync(body);
+    try {
+      await save.mutateAsync(body);
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : "No se pudo guardar el profesor");
+    }
+  }
+
+  if (!isNew && teacher.isLoading) {
+    return <p className="text-muted-foreground">Cargando profesor…</p>;
+  }
+
+  if (!isNew && teacher.isError) {
+    return <p className="text-destructive">No se pudo cargar el profesor.</p>;
   }
 
   return (
@@ -64,7 +93,7 @@ export function TeacherDetailPage() {
       <h1 className="text-2xl font-semibold">
         {isNew ? "Nuevo profesor" : `${t?.firstName ?? ""} ${t?.lastName ?? ""}`}
       </h1>
-      <form onSubmit={onSubmit} className="space-y-4">
+      <form key={isNew ? "new" : id} onSubmit={onSubmit} className="space-y-4">
         <Card>
           <CardHeader>
             <CardTitle>Datos personales y económicos</CardTitle>
@@ -80,6 +109,7 @@ export function TeacherDetailPage() {
               ["monthlySalary", "Salario mensual", "number"],
               ["costPerClass", "Coste por clase", "number"],
               ["weeklyHours", "Horas semanales", "number"],
+              ["transportCostPerDay", "Transporte por jornada (€)", "number"],
             ].map(([name, label, type]) => (
               <div key={name} className="space-y-1">
                 <Label>{label}</Label>
@@ -103,12 +133,19 @@ export function TeacherDetailPage() {
                 {t.payouts.map((p, i) => (
                   <li key={i}>
                     {p.yearMonth}: {formatMoney(p.amountPaid)} / {formatMoney(p.amount)} ({p.status})
+                    {p.transportAmount > 0 ? (
+                      <span className="block text-xs text-muted-foreground">
+                        Base {formatMoney(p.baseAmount)} + transporte {formatMoney(p.transportAmount)}{" "}
+                        ({p.workDays} jornadas)
+                      </span>
+                    ) : null}
                   </li>
                 ))}
               </ul>
             </CardContent>
           </Card>
         ) : null}
+        {saveError ? <p className="text-sm text-destructive">{saveError}</p> : null}
         {isAdmin ? (
           <Button type="submit" disabled={save.isPending}>
             Guardar

@@ -3,14 +3,33 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api } from "@/lib/api";
+import {
+  DataTable,
+  DataTableHead,
+  DataTableRow,
+  DataTableTd,
+  DataTableTh,
+} from "@/components/list/DataTable";
+import { PageHeader } from "@/components/list/PageHeader";
+import { ApiError, api } from "@/lib/api";
+import { selectClassName } from "@/lib/form-classes";
 import { useAuth } from "@/stores/auth";
+import { Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 export function SettingsPage() {
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
   const qc = useQueryClient();
   const [newUser, setNewUser] = useState({ username: "", password: "", role: "READONLY" });
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [userError, setUserError] = useState<string | null>(null);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editUser, setEditUser] = useState({
+    username: "",
+    password: "",
+    role: "READONLY",
+  });
+  const currentUser = useAuth((s) => s.user);
 
   const school = useQuery({
     queryKey: ["school"],
@@ -37,25 +56,84 @@ export function SettingsPage() {
   const createUser = useMutation({
     mutationFn: () =>
       api("/admin/users", { method: "POST", body: JSON.stringify(newUser) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      setNewUser({ username: "", password: "", role: "READONLY" });
+      setUserError(null);
+    },
+    onError: (err) => {
+      setUserError(err instanceof ApiError ? err.message : "No se pudo crear el usuario");
+    },
   });
+
+  const updateUser = useMutation({
+    mutationFn: () => {
+      const body: Record<string, string> = {};
+      if (editUser.username) body.username = editUser.username;
+      if (editUser.password) body.password = editUser.password;
+      if (editUser.role) body.role = editUser.role;
+      return api(`/admin/users/${editingUserId}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      setEditingUserId(null);
+      setEditUser({ username: "", password: "", role: "READONLY" });
+      setUserError(null);
+    },
+    onError: (err) => {
+      setUserError(err instanceof ApiError ? err.message : "No se pudo actualizar el usuario");
+    },
+  });
+
+  const deleteUser = useMutation({
+    mutationFn: (id: string) => api(`/admin/users/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      setUserError(null);
+    },
+    onError: (err) => {
+      setUserError(err instanceof ApiError ? err.message : "No se pudo eliminar el usuario");
+    },
+  });
+
+  function startEdit(u: { id: string; username: string; role: string }) {
+    setEditingUserId(u.id);
+    setEditUser({ username: u.username, password: "", role: u.role });
+    setUserError(null);
+  }
 
   async function onSchoolSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!isAdmin) return;
+    setSaveError(null);
     const fd = new FormData(e.currentTarget);
     const body: Record<string, unknown> = {};
     fd.forEach((v, k) => {
       body[k] = v;
     });
-    await saveSchool.mutateAsync(body);
+    try {
+      await saveSchool.mutateAsync(body);
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : "No se pudo guardar la configuración");
+    }
+  }
+
+  if (school.isLoading || years.isLoading) {
+    return <p className="text-muted-foreground">Cargando configuración…</p>;
+  }
+
+  if (school.isError) {
+    return <p className="text-destructive">No se pudo cargar la configuración.</p>;
   }
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Configuración del centro</h1>
+      <PageHeader title="Configuración del centro" description="Datos del centro y usuarios de acceso" />
 
-      <form onSubmit={onSchoolSubmit}>
+      <form key={`school-${school.dataUpdatedAt}`} onSubmit={onSchoolSubmit}>
         <Card>
           <CardHeader>
             <CardTitle>Datos de la escuela</CardTitle>
@@ -95,8 +173,9 @@ export function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+        {saveError ? <p className="mt-4 text-sm text-destructive">{saveError}</p> : null}
         {isAdmin ? (
-          <Button type="submit" className="mt-4">
+          <Button type="submit" className="mt-4" disabled={saveSchool.isPending}>
             Guardar centro
           </Button>
         ) : null}
@@ -108,35 +187,107 @@ export function SettingsPage() {
             <CardTitle>Usuarios</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <ul className="text-sm">
-              {users.data?.map((u) => (
-                <li key={u.id}>
-                  {u.username} — {u.role === "ADMIN" ? "Administrador" : "Consulta"}
-                </li>
-              ))}
-            </ul>
-            <div className="grid gap-2 md:grid-cols-4">
-              <Input
-                placeholder="Usuario"
-                value={newUser.username}
-                onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
-              />
-              <Input
-                placeholder="Contraseña"
-                type="password"
-                value={newUser.password}
-                onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-              />
-              <select
-                className="h-10 rounded-lg border border-border bg-card px-3 text-sm"
-                value={newUser.role}
-                onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-              >
-                <option value="ADMIN">Administrador</option>
-                <option value="READONLY">Consulta</option>
-              </select>
-              <Button onClick={() => createUser.mutate()}>Crear usuario</Button>
+            <DataTable>
+              <DataTableHead>
+                <DataTableTh>Usuario</DataTableTh>
+                <DataTableTh>Rol</DataTableTh>
+                <DataTableTh className="w-28" />
+              </DataTableHead>
+              <tbody>
+                {users.data?.map((u) => (
+                  <DataTableRow key={u.id}>
+                    <DataTableTd className="font-medium">{u.username}</DataTableTd>
+                    <DataTableTd>{u.role === "ADMIN" ? "Administrador" : "Consulta"}</DataTableTd>
+                    <DataTableTd className="text-right">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        aria-label="Editar usuario"
+                        onClick={() => startEdit(u)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        aria-label="Eliminar usuario"
+                        disabled={u.id === currentUser?.id}
+                        onClick={() => {
+                          if (confirm(`¿Eliminar al usuario ${u.username}?`)) deleteUser.mutate(u.id);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4 text-expense" />
+                      </Button>
+                    </DataTableTd>
+                  </DataTableRow>
+                ))}
+              </tbody>
+            </DataTable>
+
+            {editingUserId ? (
+              <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-3">
+                <p className="text-sm font-medium">Editar usuario</p>
+                <div className="grid gap-2 md:grid-cols-3">
+                  <Input
+                    placeholder="Usuario"
+                    value={editUser.username}
+                    onChange={(e) => setEditUser({ ...editUser, username: e.target.value })}
+                  />
+                  <Input
+                    placeholder="Nueva contraseña (opcional)"
+                    type="password"
+                    value={editUser.password}
+                    onChange={(e) => setEditUser({ ...editUser, password: e.target.value })}
+                  />
+                  <select
+                    className={selectClassName}
+                    value={editUser.role}
+                    disabled={editingUserId === currentUser?.id}
+                    onChange={(e) => setEditUser({ ...editUser, role: e.target.value })}
+                  >
+                    <option value="ADMIN">Administrador</option>
+                    <option value="READONLY">Consulta</option>
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <Button disabled={updateUser.isPending} onClick={() => updateUser.mutate()}>
+                    Guardar cambios
+                  </Button>
+                  <Button variant="outline" onClick={() => setEditingUserId(null)}>
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="border-t border-border pt-4">
+              <p className="mb-2 text-sm font-medium">Nuevo usuario</p>
+              <div className="grid gap-2 md:grid-cols-4">
+                <Input
+                  placeholder="Usuario"
+                  value={newUser.username}
+                  onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                />
+                <Input
+                  placeholder="Contraseña"
+                  type="password"
+                  value={newUser.password}
+                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                />
+                <select
+                  className={selectClassName}
+                  value={newUser.role}
+                  onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+                >
+                  <option value="ADMIN">Administrador</option>
+                  <option value="READONLY">Consulta</option>
+                </select>
+                <Button disabled={createUser.isPending} onClick={() => createUser.mutate()}>
+                  Crear usuario
+                </Button>
+              </div>
             </div>
+            {userError ? <p className="text-sm text-destructive">{userError}</p> : null}
           </CardContent>
         </Card>
       ) : null}

@@ -10,5 +10,6 @@ services:
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:-admin123}"
       NODE_ENV: production
       SERVE_WEB: "true"
+      SEED_MOCK: "true"
     volumes:
       - ./data:/app/data

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 import { FEE_STATUS_LABELS } from "@finband/shared";
@@ -17,6 +17,7 @@ export function StudentDetailPage() {
   const qc = useQueryClient();
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
   const [tab, setTab] = useState<"personal" | "academico" | "economico">("personal");
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const student = useQuery({
     queryKey: ["student", id],
@@ -68,6 +69,12 @@ export function StudentDetailPage() {
     discounts?: Array<{ id: string; name: string; type: string; value: number }>;
   };
 
+  function fieldDefault(name: string) {
+    const raw = s?.[name as keyof typeof s];
+    if (name === "birthDate" && typeof raw === "string") return raw.slice(0, 10);
+    return (raw as string | number | undefined) ?? "";
+  }
+
   function field(name: string, label: string, type = "text") {
     return (
       <div className="space-y-1">
@@ -75,7 +82,7 @@ export function StudentDetailPage() {
         <Input
           name={name}
           type={type}
-          defaultValue={(s?.[name as keyof typeof s] as string | number | undefined) ?? ""}
+          defaultValue={fieldDefault(name)}
           disabled={!isAdmin}
         />
       </div>
@@ -85,6 +92,7 @@ export function StudentDetailPage() {
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!isAdmin) return;
+    setSaveError(null);
     const fd = new FormData(e.currentTarget);
     const body: Record<string, unknown> = {};
     fd.forEach((v, k) => {
@@ -92,7 +100,19 @@ export function StudentDetailPage() {
       else body[k] = v || null;
     });
     if (!body.status) body.status = "ACTIVE";
-    await save.mutateAsync(body);
+    try {
+      await save.mutateAsync(body);
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : "No se pudo guardar el alumno");
+    }
+  }
+
+  if (!isNew && student.isLoading) {
+    return <p className="text-muted-foreground">Cargando alumno…</p>;
+  }
+
+  if (!isNew && student.isError) {
+    return <p className="text-destructive">No se pudo cargar el alumno.</p>;
   }
 
   return (
@@ -121,7 +141,7 @@ export function StudentDetailPage() {
         ))}
       </div>
 
-      <form onSubmit={onSubmit}>
+      <form key={isNew ? "new" : id} onSubmit={onSubmit}>
         <Card>
           <CardHeader>
             <CardTitle>Ficha del alumno</CardTitle>
@@ -221,6 +241,7 @@ export function StudentDetailPage() {
             ) : null}
           </CardContent>
         </Card>
+        {saveError ? <p className="mt-4 text-sm text-destructive">{saveError}</p> : null}
         {isAdmin ? (
           <div className="mt-4 flex justify-end">
             <Button type="submit" disabled={save.isPending}>

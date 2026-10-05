@@ -4,9 +4,41 @@ import {
   attendanceSessionSchema,
   classGroupSchema,
 } from "@finband/shared";
+import {
+  classIncludeSchedule,
+  replaceScheduleSlots,
+  type ScheduleSlotInput,
+} from "../lib/schedule.js";
 import { prisma } from "../lib/prisma.js";
 
+function stripSlots(data: Record<string, unknown>) {
+  const { scheduleSlots: _s, ...rest } = data;
+  return rest;
+}
+
 export async function classRoutes(app: FastifyInstance) {
+  app.get("/schedule/weekly", async () => {
+    const groups = await prisma.classGroup.findMany({
+      include: {
+        teacher: true,
+        scheduleSlots: { orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }] },
+      },
+      orderBy: { name: "asc" },
+    });
+    return groups.flatMap((g) =>
+      g.scheduleSlots.map((slot) => ({
+        classId: g.id,
+        className: g.name,
+        room: g.room,
+        type: g.type,
+        teacherName: `${g.teacher.firstName} ${g.teacher.lastName}`,
+        dayOfWeek: slot.dayOfWeek,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+      })),
+    );
+  });
+
   app.get("/", async (request) => {
     const q = request.query as Record<string, string | undefined>;
     const where: Record<string, unknown> = {};
@@ -16,7 +48,7 @@ export async function classRoutes(app: FastifyInstance) {
     return prisma.classGroup.findMany({
       where,
       include: {
-        teacher: true,
+        ...classIncludeSchedule,
         _count: { select: { enrollments: { where: { active: true } } } },
       },
       orderBy: { name: "asc" },
@@ -28,7 +60,7 @@ export async function classRoutes(app: FastifyInstance) {
     const group = await prisma.classGroup.findUnique({
       where: { id },
       include: {
-        teacher: true,
+        ...classIncludeSchedule,
         enrollments: {
           where: { active: true },
           include: { student: true },
@@ -49,8 +81,13 @@ export async function classRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
-    const d = parsed.data;
-    return prisma.classGroup.create({ data: d });
+    const { scheduleSlots, ...data } = parsed.data;
+    const group = await prisma.classGroup.create({ data });
+    await replaceScheduleSlots(group.id, scheduleSlots);
+    return prisma.classGroup.findUnique({
+      where: { id: group.id },
+      include: classIncludeSchedule,
+    });
   });
 
   app.patch("/:id", async (request, reply) => {
@@ -59,7 +96,13 @@ export async function classRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
-    return prisma.classGroup.update({ where: { id }, data: parsed.data });
+    const { scheduleSlots, ...data } = parsed.data;
+    await prisma.classGroup.update({ where: { id }, data: stripSlots(data) });
+    await replaceScheduleSlots(id, scheduleSlots as ScheduleSlotInput[] | undefined);
+    return prisma.classGroup.findUnique({
+      where: { id },
+      include: classIncludeSchedule,
+    });
   });
 
   app.delete("/:id", async (request) => {

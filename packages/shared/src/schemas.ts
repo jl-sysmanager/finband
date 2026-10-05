@@ -17,6 +17,12 @@ export const userCreateSchema = z.object({
   role: z.enum(USER_ROLES),
 });
 
+export const userUpdateSchema = z.object({
+  username: z.string().min(3).optional(),
+  password: z.string().min(6).optional(),
+  role: z.enum(USER_ROLES).optional(),
+});
+
 export const schoolSettingsSchema = z.object({
   name: z.string().min(1),
   address: z.string().optional().nullable(),
@@ -48,6 +54,7 @@ export const teacherSchema = z.object({
   monthlySalary: z.number().min(0).optional().nullable(),
   costPerClass: z.number().min(0).optional().nullable(),
   weeklyHours: z.number().min(0).optional().nullable(),
+  transportCostPerDay: z.number().min(0).optional(),
 });
 
 export const studentSchema = z.object({
@@ -66,12 +73,18 @@ export const studentSchema = z.object({
   status: z.enum(STUDENT_STATUSES).optional(),
 });
 
+export const scheduleSlotSchema = z.object({
+  dayOfWeek: z.number().int().min(1).max(7),
+  startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Formato HH:mm"),
+  endTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Formato HH:mm"),
+});
+
 export const classGroupSchema = z.object({
   name: z.string().min(1),
   type: z.enum(CLASS_TYPES),
   teacherId: z.string().min(1),
   room: z.string().optional().nullable(),
-  scheduleJson: z.string().optional(),
+  scheduleSlots: z.array(scheduleSlotSchema).optional(),
   durationMinutes: z.number().int().min(15),
   maxStudents: z.number().int().min(1),
   notes: z.string().optional().nullable(),

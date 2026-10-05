@@ -105,6 +105,7 @@ model Teacher {
   monthlySalary  Float?
   costPerClass   Float?
   weeklyHours    Float?
+  transportCostPerDay Float    @default(0)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
@@ -144,7 +145,6 @@ model ClassGroup {
   teacherId       String
   teacher         Teacher            @relation(fields: [teacherId], references: [id])
   room            String?
-  scheduleJson    String             @default("[]")
   durationMinutes Int                @default(60)
   maxStudents     Int                @default(1)
   notes           String?
@@ -152,6 +152,19 @@ model ClassGroup {
   updatedAt       DateTime           @updatedAt
   enrollments     Enrollment[]
   sessions        AttendanceSession[]
+  scheduleSlots   ClassScheduleSlot[]
+}
+
+/// Horario recurrente semanal (1 = lunes … 7 = domingo). Horas en HH:mm.
+model ClassScheduleSlot {
+  id           String     @id @default(cuid())
+  classGroupId String
+  classGroup   ClassGroup @relation(fields: [classGroupId], references: [id], onDelete: Cascade)
+  dayOfWeek    Int
+  startTime    String
+  endTime      String
+
+  @@unique([classGroupId, dayOfWeek, startTime])
 }
 
 model Enrollment {
@@ -228,6 +241,9 @@ model TeacherPayout {
   teacherId   String
   teacher     Teacher       @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   yearMonth   String
+  baseAmount  Float         @default(0)
+  transportAmount Float     @default(0)
+  workDays    Int           @default(0)
   amount      Float
   amountPaid  Float         @default(0)
   status      PayoutStatus  @default(PENDING)

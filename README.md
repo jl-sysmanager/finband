@@ -32,6 +32,8 @@ npm run db:seed
 npm run dev
 ```
 
+El seed incluye **datos mock** (alumnos, profesores, clases, cuotas, ingresos/gastos) para probar el dashboard. Para omitirlos: `SEED_MOCK=false npm run db:seed`.
+
 - Frontend: [http://localhost:5173](http://localhost:5173)
 - API: [http://localhost:3000](http://localhost:3000)
 

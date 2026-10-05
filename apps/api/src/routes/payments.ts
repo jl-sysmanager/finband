@@ -1,33 +1,82 @@
 import type { FastifyInstance } from "fastify";
-import type { FeeStatus, PayoutStatus } from "@prisma/client";
-import { studentPaymentSchema, teacherPayoutPaymentSchema } from "@finband/shared";
+import { z } from "zod";
+import { PAYMENT_METHODS, studentPaymentSchema, teacherPayoutPaymentSchema } from "@finband/shared";
+import { calculateTeacherPayout } from "../lib/teacher-payout.js";
+import { feeStatus, payoutStatus } from "../lib/fee-status.js";
 import { prisma } from "../lib/prisma.js";
 
-function feeStatus(total: number, paid: number): FeeStatus {
-  if (paid <= 0) return "PENDING";
-  if (paid >= total) return "PAID";
-  return "PARTIAL";
+async function syncFeePaid(feeId: string) {
+  const fee = await prisma.studentFee.findUnique({
+    where: { id: feeId },
+    include: { payments: true },
+  });
+  if (!fee) return;
+  const amountPaid = fee.payments.reduce((s, p) => s + p.amount, 0);
+  await prisma.studentFee.update({
+    where: { id: feeId },
+    data: {
+      amountPaid,
+      status: feeStatus(fee.totalAmount, amountPaid),
+    },
+  });
 }
 
-function payoutStatus(total: number, paid: number): PayoutStatus {
-  if (paid <= 0) return "PENDING";
-  if (paid >= total) return "PAID";
-  return "PARTIAL";
+function endOfDay(dateStr: string) {
+  const d = new Date(dateStr);
+  d.setHours(23, 59, 59, 999);
+  return d;
 }
+
+function paidAtRange(from?: string, to?: string) {
+  if (!from && !to) return undefined;
+  const paidAt: Record<string, Date> = {};
+  if (from) paidAt.gte = new Date(from);
+  if (to) paidAt.lte = endOfDay(to);
+  return paidAt;
+}
+
+function yearMonthRange(from?: string, to?: string) {
+  if (!from && !to) return undefined;
+  const yearMonth: Record<string, string> = {};
+  if (from) yearMonth.gte = from;
+  if (to) yearMonth.lte = to;
+  return yearMonth;
+}
+
+const studentPaymentPatchSchema = z.object({
+  amount: z.number().positive().optional(),
+  method: z.enum(PAYMENT_METHODS).optional(),
+  paidAt: z.string().optional(),
+  notes: z.string().optional().nullable(),
+});
 
 export async function paymentRoutes(app: FastifyInstance) {
   app.get("/student-fees", async (request) => {
     const q = request.query as Record<string, string | undefined>;
     const where: Record<string, unknown> = {};
-    if (q.yearMonth) where.yearMonth = q.yearMonth;
+    const monthRange = yearMonthRange(q.monthFrom, q.monthTo);
+    if (monthRange) where.yearMonth = monthRange;
+    else if (q.yearMonth) where.yearMonth = q.yearMonth;
     if (q.status) where.status = q.status;
+    if (q.search) {
+      where.student = {
+        OR: [
+          { firstName: { contains: q.search } },
+          { lastName: { contains: q.search } },
+        ],
+      };
+    }
+    const paymentDateFilter = paidAtRange(q.paidFrom, q.paidTo);
+    const paymentsInclude = paymentDateFilter
+      ? { where: { paidAt: paymentDateFilter }, orderBy: { paidAt: "desc" as const } }
+      : { orderBy: { paidAt: "desc" as const } };
     return prisma.studentFee.findMany({
       where,
       include: {
         student: true,
-        payments: { orderBy: { paidAt: "desc" } },
+        payments: paymentsInclude,
       },
-      orderBy: { yearMonth: "desc" },
+      orderBy: [{ yearMonth: "desc" }, { student: { lastName: "asc" } }],
     });
   });
 
@@ -50,27 +99,60 @@ export async function paymentRoutes(app: FastifyInstance) {
       },
     });
 
-    const newPaid = fee.amountPaid + d.amount;
-    await prisma.studentFee.update({
-      where: { id: fee.id },
+    await syncFeePaid(fee.id);
+    return payment;
+  });
+
+  app.patch("/student-payments/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parsed = studentPaymentPatchSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
+    }
+    const existing = await prisma.studentPayment.findUnique({ where: { id } });
+    if (!existing) return reply.status(404).send({ error: "Cobro no encontrado" });
+
+    const payment = await prisma.studentPayment.update({
+      where: { id },
       data: {
-        amountPaid: newPaid,
-        status: feeStatus(fee.totalAmount, newPaid),
+        ...parsed.data,
+        paidAt: parsed.data.paidAt ? new Date(parsed.data.paidAt) : undefined,
       },
     });
-
+    await syncFeePaid(existing.feeId);
     return payment;
+  });
+
+  app.delete("/student-payments/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const existing = await prisma.studentPayment.findUnique({ where: { id } });
+    if (!existing) return reply.status(404).send({ error: "Cobro no encontrado" });
+    await prisma.studentPayment.delete({ where: { id } });
+    await syncFeePaid(existing.feeId);
+    return { ok: true };
   });
 
   app.get("/teacher-payouts", async (request) => {
     const q = request.query as Record<string, string | undefined>;
     const where: Record<string, unknown> = {};
-    if (q.yearMonth) where.yearMonth = q.yearMonth;
+    const monthRange = yearMonthRange(q.monthFrom, q.monthTo);
+    if (monthRange) where.yearMonth = monthRange;
+    else if (q.yearMonth) where.yearMonth = q.yearMonth;
     if (q.status) where.status = q.status;
+    if (q.search) {
+      where.teacher = {
+        OR: [
+          { firstName: { contains: q.search } },
+          { lastName: { contains: q.search } },
+        ],
+      };
+    }
+    const paidRange = paidAtRange(q.paidFrom, q.paidTo);
+    if (paidRange) where.paidAt = paidRange;
     return prisma.teacherPayout.findMany({
       where,
       include: { teacher: true },
-      orderBy: { yearMonth: "desc" },
+      orderBy: [{ yearMonth: "desc" }, { teacher: { lastName: "asc" } }],
     });
   });
 
@@ -82,19 +164,24 @@ export async function paymentRoutes(app: FastifyInstance) {
     const teachers = await prisma.teacher.findMany({ where: { deletedAt: null } });
     let count = 0;
     for (const t of teachers) {
-      let amount = t.monthlySalary ?? 0;
-      if (!amount && t.costPerClass) {
-        const classes = await prisma.classGroup.count({ where: { teacherId: t.id } });
-        amount = t.costPerClass * classes * 4;
-      }
-      if (!amount && t.hourlyRate && t.weeklyHours) {
-        amount = t.hourlyRate * t.weeklyHours * 4;
-      }
-      if (amount <= 0) continue;
+      const calc = await calculateTeacherPayout(t.id, yearMonth);
+      if (calc.amount <= 0) continue;
       await prisma.teacherPayout.upsert({
         where: { teacherId_yearMonth: { teacherId: t.id, yearMonth } },
-        create: { teacherId: t.id, yearMonth, amount },
-        update: { amount },
+        create: {
+          teacherId: t.id,
+          yearMonth,
+          baseAmount: calc.baseAmount,
+          transportAmount: calc.transportAmount,
+          workDays: calc.workDays,
+          amount: calc.amount,
+        },
+        update: {
+          baseAmount: calc.baseAmount,
+          transportAmount: calc.transportAmount,
+          workDays: calc.workDays,
+          amount: calc.amount,
+        },
       });
       count++;
     }
@@ -120,5 +207,34 @@ export async function paymentRoutes(app: FastifyInstance) {
         notes: d.notes ?? payout.notes,
       },
     });
+  });
+
+  app.patch("/teacher-payouts/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as { amountPaid?: number; notes?: string | null };
+    const payout = await prisma.teacherPayout.findUnique({ where: { id } });
+    if (!payout) return reply.status(404).send({ error: "Liquidación no encontrada" });
+
+    const amountPaid = body.amountPaid ?? payout.amountPaid;
+    if (amountPaid < 0 || amountPaid > payout.amount) {
+      return reply.status(400).send({ error: "Importe pagado inválido" });
+    }
+
+    return prisma.teacherPayout.update({
+      where: { id },
+      data: {
+        amountPaid,
+        status: payoutStatus(payout.amount, amountPaid),
+        notes: body.notes === undefined ? undefined : body.notes,
+      },
+    });
+  });
+
+  app.delete("/teacher-payouts/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const payout = await prisma.teacherPayout.findUnique({ where: { id } });
+    if (!payout) return reply.status(404).send({ error: "Liquidación no encontrada" });
+    await prisma.teacherPayout.delete({ where: { id } });
+    return { ok: true };
   });
 }

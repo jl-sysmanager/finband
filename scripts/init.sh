@@ -6,7 +6,7 @@ export DATABASE_URL="${DATABASE_URL:-file:/app/data/finband.db}"
 if [ ! -f /app/data/finband.db ]; then
   echo "Inicializando base de datos…"
   npx prisma migrate deploy
-  npx tsx prisma/seed.ts
+  SEED_MOCK="${SEED_MOCK:-true}" npx tsx prisma/seed.ts
 else
   npx prisma migrate deploy
 fi

@@ -1,14 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { CLASS_TYPES, CLASS_TYPE_LABELS, type ClassType } from "@finband/shared";
+import { CLASS_TYPES, CLASS_TYPE_LABELS, weekdayLabel, type ClassType } from "@finband/shared";
+import {
+  WeeklyScheduleEditor,
+  type ScheduleSlotDraft,
+} from "@/components/schedule/WeeklyScheduleEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api } from "@/lib/api";
-import { formatDate } from "@/lib/utils";
+import { ApiError, api } from "@/lib/api";
+import { formatDateTime } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
-import { useState } from "react";
 
 export function ClassDetailPage() {
   const { id } = useParams();
@@ -18,6 +22,8 @@ export function ClassDetailPage() {
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
   const [studentId, setStudentId] = useState("");
   const [sessionDate, setSessionDate] = useState("");
+  const [scheduleSlots, setScheduleSlots] = useState<ScheduleSlotDraft[]>([]);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const cls = useQuery({
     queryKey: ["class", id],
@@ -35,6 +41,39 @@ export function ClassDetailPage() {
     queryFn: () => api<{ items: Array<{ id: string; firstName: string; lastName: string }> }>("/students?limit=500"),
   });
 
+  const c = cls.data as {
+    name?: string;
+    type?: ClassType;
+    teacherId?: string;
+    room?: string;
+    durationMinutes?: number;
+    maxStudents?: number;
+    notes?: string;
+    scheduleSlots?: ScheduleSlotDraft[];
+    enrollments?: Array<{ student: { id: string; firstName: string; lastName: string } }>;
+    sessions?: Array<{
+      id: string;
+      sessionDate: string;
+      records: Array<{ studentId: string; present: boolean }>;
+    }>;
+  };
+
+  useEffect(() => {
+    if (isNew) {
+      setScheduleSlots([]);
+      return;
+    }
+    if (!cls.data) return;
+    const slots = (cls.data as { scheduleSlots?: ScheduleSlotDraft[] }).scheduleSlots ?? [];
+    setScheduleSlots(
+      slots.map((s) => ({
+        dayOfWeek: s.dayOfWeek,
+        startTime: s.startTime,
+        endTime: s.endTime,
+      })),
+    );
+  }, [isNew, id, cls.data]);
+
   const save = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       isNew
@@ -42,7 +81,9 @@ export function ClassDetailPage() {
         : api<{ id: string }>(`/classes/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     onSuccess: (data: { id?: string }) => {
       qc.invalidateQueries({ queryKey: ["classes"] });
+      qc.invalidateQueries({ queryKey: ["weekly-schedule"] });
       if (isNew && data?.id) navigate(`/clases/${data.id}`);
+      else qc.invalidateQueries({ queryKey: ["class", id] });
     },
   });
 
@@ -59,45 +100,41 @@ export function ClassDetailPage() {
     mutationFn: () =>
       api(`/classes/${id}/sessions`, {
         method: "POST",
-        body: JSON.stringify({ sessionDate }),
+        body: JSON.stringify({ sessionDate: new Date(sessionDate).toISOString() }),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["class", id] }),
   });
 
-  const c = cls.data as {
-    name?: string;
-    type?: ClassType;
-    teacherId?: string;
-    room?: string;
-    durationMinutes?: number;
-    maxStudents?: number;
-    scheduleJson?: string;
-    notes?: string;
-    enrollments?: Array<{ student: { id: string; firstName: string; lastName: string } }>;
-    sessions?: Array<{
-      id: string;
-      sessionDate: string;
-      records: Array<{ studentId: string; present: boolean }>;
-    }>;
-  };
-
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!isAdmin) return;
-    const fd = new FormData(e.currentTarget);
-    const body: Record<string, unknown> = {};
+    setSaveError(null);
+    const form = e.currentTarget;
+    const fd = new FormData(form);
+    const body: Record<string, unknown> = { scheduleSlots };
     fd.forEach((v, k) => {
       if (k === "durationMinutes" || k === "maxStudents") body[k] = Number(v);
-      else body[k] = v;
+      else if (k !== "scheduleSlots") body[k] = v;
     });
-    if (!body.scheduleJson) body.scheduleJson = "[]";
-    await save.mutateAsync(body);
+    try {
+      await save.mutateAsync(body);
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : "No se pudo guardar la clase");
+    }
+  }
+
+  if (!isNew && cls.isLoading) {
+    return <p className="text-muted-foreground">Cargando clase…</p>;
+  }
+
+  if (!isNew && cls.isError) {
+    return <p className="text-destructive">No se pudo cargar la clase.</p>;
   }
 
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">{isNew ? "Nueva clase" : c?.name}</h1>
-      <form onSubmit={onSubmit}>
+      <form key={isNew ? "new" : id} onSubmit={onSubmit} className="space-y-4">
         <Card>
           <CardHeader>
             <CardTitle>Configuración de la clase</CardTitle>
@@ -105,7 +142,7 @@ export function ClassDetailPage() {
           <CardContent className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1">
               <Label>Nombre</Label>
-              <Input name="name" defaultValue={c?.name ?? ""} disabled={!isAdmin} />
+              <Input name="name" defaultValue={c?.name ?? ""} disabled={!isAdmin} required />
             </div>
             <div className="space-y-1">
               <Label>Tipo</Label>
@@ -128,6 +165,7 @@ export function ClassDetailPage() {
                 name="teacherId"
                 defaultValue={c?.teacherId ?? ""}
                 disabled={!isAdmin}
+                required
                 className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm"
               >
                 <option value="">Seleccionar…</option>
@@ -160,22 +198,39 @@ export function ClassDetailPage() {
                 disabled={!isAdmin}
               />
             </div>
-            <div className="md:col-span-2 space-y-1">
-              <Label>Horario (JSON)</Label>
-              <Input
-                name="scheduleJson"
-                defaultValue={c?.scheduleJson ?? "[]"}
+            <div className="md:col-span-2">
+              <WeeklyScheduleEditor
+                value={scheduleSlots}
+                onChange={setScheduleSlots}
                 disabled={!isAdmin}
               />
             </div>
           </CardContent>
         </Card>
+        {saveError ? <p className="text-sm text-destructive">{saveError}</p> : null}
         {isAdmin ? (
-          <Button type="submit" className="mt-4" disabled={save.isPending}>
+          <Button type="submit" disabled={save.isPending}>
             Guardar
           </Button>
         ) : null}
       </form>
+
+      {!isNew && scheduleSlots.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Resumen horario</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm">
+            <ul className="space-y-1">
+              {scheduleSlots.map((s, i) => (
+                <li key={i}>
+                  {weekdayLabel(s.dayOfWeek)} · {s.startTime} – {s.endTime}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {!isNew ? (
         <>
@@ -205,11 +260,7 @@ export function ClassDetailPage() {
                       </option>
                     ))}
                   </select>
-                  <Button
-                    type="button"
-                    disabled={!studentId}
-                    onClick={() => enroll.mutate()}
-                  >
+                  <Button type="button" disabled={!studentId} onClick={() => enroll.mutate()}>
                     Inscribir
                   </Button>
                 </div>
@@ -223,20 +274,23 @@ export function ClassDetailPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               {isAdmin ? (
-                <div className="flex flex-wrap gap-2">
-                  <Input type="date" value={sessionDate} onChange={(e) => setSessionDate(e.target.value)} />
-                  <Button
-                    type="button"
-                    disabled={!sessionDate}
-                    onClick={() => addSession.mutate()}
-                  >
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="space-y-1">
+                    <Label>Fecha y hora de la sesión</Label>
+                    <Input
+                      type="datetime-local"
+                      value={sessionDate}
+                      onChange={(e) => setSessionDate(e.target.value)}
+                    />
+                  </div>
+                  <Button type="button" disabled={!sessionDate} onClick={() => addSession.mutate()}>
                     Crear sesión
                   </Button>
                 </div>
               ) : null}
               {(c?.sessions ?? []).map((s) => (
                 <div key={s.id} className="rounded-lg border border-border p-3 text-sm">
-                  <p className="font-medium">{formatDate(s.sessionDate)}</p>
+                  <p className="font-medium">{formatDateTime(s.sessionDate)}</p>
                   <p className="text-muted-foreground">
                     Presentes: {s.records.filter((r) => r.present).length}/{s.records.length}
                   </p>
