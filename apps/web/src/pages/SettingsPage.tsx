@@ -14,7 +14,7 @@ import { PageHeader } from "@/components/list/PageHeader";
 import { ApiError, api, downloadUrl, uploadBackup } from "@/lib/api";
 import { selectClassName } from "@/lib/form-classes";
 import { useAuth } from "@/stores/auth";
-import { Download, Pencil, Trash2, Upload } from "lucide-react";
+import { Download, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
 
 export function SettingsPage() {
@@ -268,19 +268,12 @@ export function SettingsPage() {
               </DataTableHead>
               <tbody>
                 {users.data?.map((u) => (
-                  <DataTableRow key={u.id}>
+                  <DataTableRow key={u.id} onClick={() => isAdmin && startEdit(u)}>
                     <DataTableTd className="font-medium">{u.username}</DataTableTd>
                     <DataTableTd>{u.role === "ADMIN" ? "Administrador" : "Consulta"}</DataTableTd>
-                    <DataTableTd className="text-right">
+                    <DataTableTd className="text-right" onClick={(e) => e.stopPropagation()}>
                       <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label="Editar usuario"
-                        onClick={() => startEdit(u)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
+                        type="button"
                         size="icon"
                         variant="ghost"
                         aria-label="Eliminar usuario"

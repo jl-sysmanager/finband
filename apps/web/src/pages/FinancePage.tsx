@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from "@finband/shared";
-import { Pencil, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -245,7 +245,10 @@ export function FinancePage({ mode }: FinanceProps) {
             </DataTableHead>
             <tbody>
               {filteredEntries.map((e) => (
-                <DataTableRow key={e.id}>
+                <DataTableRow
+                  key={e.id}
+                  onClick={() => isAdmin && setEditing(e)}
+                >
                   <DataTableTd>{formatDate(e.date)}</DataTableTd>
                   <DataTableTd>{e.concept}</DataTableTd>
                   <DataTableTd>{e.category.name}</DataTableTd>
@@ -262,13 +265,12 @@ export function FinancePage({ mode }: FinanceProps) {
                     {formatMoney(e.amount)}
                   </DataTableTd>
                   {isAdmin ? (
-                    <DataTableTd className="text-right">
-                      <Button size="icon" variant="ghost" onClick={() => setEditing(e)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+                    <DataTableTd className="text-right" onClick={(ev) => ev.stopPropagation()}>
                       <Button
+                        type="button"
                         size="icon"
                         variant="ghost"
+                        aria-label="Eliminar movimiento"
                         onClick={() => {
                           if (confirm("¿Eliminar este movimiento?")) remove.mutate(e.id);
                         }}

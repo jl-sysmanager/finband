@@ -20,7 +20,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { addDaysIso, buildQuery, mondayOfWeek, todayISO } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
-import { ChevronLeft, ChevronRight, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, RotateCcw, Trash2 } from "lucide-react";
 
 export function ClassesPage() {
   const [view, setView] = useState<"list" | "calendar">("list");
@@ -223,7 +223,7 @@ export function ClassesPage() {
               </DataTableHead>
               <tbody>
                 {q.data?.map((c) => (
-                  <DataTableRow key={c.id}>
+                  <DataTableRow key={c.id} onClick={() => navigate(`/clases/${c.id}`)}>
                     <DataTableTd className="font-medium">{c.name}</DataTableTd>
                     <DataTableTd>{CLASS_TYPE_LABELS[c.type]}</DataTableTd>
                     <DataTableTd>
@@ -242,17 +242,10 @@ export function ClassesPage() {
                     <DataTableTd>
                       {c._count.enrollments}/{c.maxStudents}
                     </DataTableTd>
-                    <DataTableTd className="text-right">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label="Editar clase"
-                        onClick={() => navigate(`/clases/${c.id}`)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+                    <DataTableTd className="text-right" onClick={(e) => e.stopPropagation()}>
                       {isAdmin ? (
                         <Button
+                          type="button"
                           size="icon"
                           variant="ghost"
                           aria-label="Eliminar clase"

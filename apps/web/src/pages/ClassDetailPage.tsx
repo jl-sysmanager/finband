@@ -11,7 +11,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, api } from "@/lib/api";
-import { formatDateTime } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 
 export function ClassDetailPage() {
@@ -21,7 +20,6 @@ export function ClassDetailPage() {
   const qc = useQueryClient();
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
   const [studentId, setStudentId] = useState("");
-  const [sessionDate, setSessionDate] = useState("");
   const [scheduleSlots, setScheduleSlots] = useState<ScheduleSlotDraft[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -51,11 +49,6 @@ export function ClassDetailPage() {
     notes?: string;
     scheduleSlots?: ScheduleSlotDraft[];
     enrollments?: Array<{ student: { id: string; firstName: string; lastName: string } }>;
-    sessions?: Array<{
-      id: string;
-      sessionDate: string;
-      records: Array<{ studentId: string; present: boolean }>;
-    }>;
   };
 
   useEffect(() => {
@@ -92,15 +85,6 @@ export function ClassDetailPage() {
       api(`/classes/${id}/enrollments`, {
         method: "POST",
         body: JSON.stringify({ studentId }),
-      }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["class", id] }),
-  });
-
-  const addSession = useMutation({
-    mutationFn: () =>
-      api(`/classes/${id}/sessions`, {
-        method: "POST",
-        body: JSON.stringify({ sessionDate: new Date(sessionDate).toISOString() }),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["class", id] }),
   });
@@ -233,72 +217,39 @@ export function ClassDetailPage() {
       ) : null}
 
       {!isNew ? (
-        <>
-          <Card>
-            <CardHeader>
-              <CardTitle>Alumnos inscritos</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <ul className="text-sm">
-                {(c?.enrollments ?? []).map((e) => (
-                  <li key={e.student.id}>
-                    {e.student.firstName} {e.student.lastName}
-                  </li>
-                ))}
-              </ul>
-              {isAdmin ? (
-                <div className="flex flex-wrap gap-2">
-                  <select
-                    className="h-10 rounded-lg border border-border bg-card px-3 text-sm"
-                    value={studentId}
-                    onChange={(e) => setStudentId(e.target.value)}
-                  >
-                    <option value="">Añadir alumno…</option>
-                    {students.data?.items.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.firstName} {s.lastName}
-                      </option>
-                    ))}
-                  </select>
-                  <Button type="button" disabled={!studentId} onClick={() => enroll.mutate()}>
-                    Inscribir
-                  </Button>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Asistencia</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {isAdmin ? (
-                <div className="flex flex-wrap items-end gap-2">
-                  <div className="space-y-1">
-                    <Label>Fecha y hora de la sesión</Label>
-                    <Input
-                      type="datetime-local"
-                      value={sessionDate}
-                      onChange={(e) => setSessionDate(e.target.value)}
-                    />
-                  </div>
-                  <Button type="button" disabled={!sessionDate} onClick={() => addSession.mutate()}>
-                    Crear sesión
-                  </Button>
-                </div>
-              ) : null}
-              {(c?.sessions ?? []).map((s) => (
-                <div key={s.id} className="rounded-lg border border-border p-3 text-sm">
-                  <p className="font-medium">{formatDateTime(s.sessionDate)}</p>
-                  <p className="text-muted-foreground">
-                    Presentes: {s.records.filter((r) => r.present).length}/{s.records.length}
-                  </p>
-                </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Alumnos inscritos</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <ul className="text-sm">
+              {(c?.enrollments ?? []).map((e) => (
+                <li key={e.student.id}>
+                  {e.student.firstName} {e.student.lastName}
+                </li>
               ))}
-            </CardContent>
-          </Card>
-        </>
+            </ul>
+            {isAdmin ? (
+              <div className="flex flex-wrap gap-2">
+                <select
+                  className="h-10 rounded-lg border border-border bg-card px-3 text-sm"
+                  value={studentId}
+                  onChange={(e) => setStudentId(e.target.value)}
+                >
+                  <option value="">Añadir alumno…</option>
+                  {students.data?.items.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.firstName} {s.lastName}
+                    </option>
+                  ))}
+                </select>
+                <Button type="button" disabled={!studentId} onClick={() => enroll.mutate()}>
+                  Inscribir
+                </Button>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
       ) : null}
     </div>
   );

@@ -53,9 +53,15 @@ export function DataTableRow({
 export function DataTableTd({
   children,
   className,
+  onClick,
 }: {
   children: ReactNode;
   className?: string;
+  onClick?: React.MouseEventHandler<HTMLTableCellElement>;
 }) {
-  return <td className={cn("py-2 pr-3 align-middle", className)}>{children}</td>;
+  return (
+    <td className={cn("py-2 pr-3 align-middle", className)} onClick={onClick}>
+      {children}
+    </td>
+  );
 }

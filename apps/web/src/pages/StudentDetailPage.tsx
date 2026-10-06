@@ -8,6 +8,7 @@ import { ApiError, api } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 import { FEE_STATUS_LABELS } from "@finband/shared";
+import { StudentFeeGeneratePanel } from "@/components/fees/StudentFeeGeneratePanel";
 import { Trash2 } from "lucide-react";
 import { useState } from "react";
 
@@ -206,6 +207,11 @@ export function StudentDetailPage() {
             {tab === "economico" ? (
               <>
                 {field("monthlyFee", "Cuota mensual fija (opcional)", "number")}
+                {!isNew && isAdmin && id ? (
+                  <div className="md:col-span-2">
+                    <StudentFeeGeneratePanel studentId={id} />
+                  </div>
+                ) : null}
                 {!isNew ? (
                   <>
                     <div className="md:col-span-2">
