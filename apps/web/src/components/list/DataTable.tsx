@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { MouseEventHandler, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export function DataTable({ children, className }: { children: ReactNode; className?: string }) {
@@ -57,13 +57,13 @@ export function DataTableTd({
 }: {
   children: ReactNode;
   className?: string;
-  onClick?: React.MouseEventHandler<HTMLTableCellElement>;
+  onClick?: MouseEventHandler<HTMLTableCellElement>;
 }) {
   return (
-    <td className={cn("py-2 pr-3 align-middle", className)} onClick={onClick}>
+    <td className={cn("px-4 py-3 align-middle", className)} onClick={onClick}>
       {children}
     </td>
-  return <td className={cn("px-4 py-3 align-middle", className)}>{children}</td>;
+  );
 }
 
 export function DataTableActions({ children }: { children: ReactNode }) {

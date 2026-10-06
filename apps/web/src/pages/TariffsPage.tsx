@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CLASS_TYPES, CLASS_TYPE_LABELS } from "@finband/shared";
 import { Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,6 @@ import { PageHeader } from "@/components/list/PageHeader";
 import { ApiError, api } from "@/lib/api";
 import { formatMoney } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
-import { useMemo } from "react";
 
 type Rule = {
   id: string;
@@ -85,15 +84,13 @@ export function TariffsPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="page-container space-y-4">
       <PageHeader
         title="Tarifas"
         description={`${filteredRules.length} reglas · La generación de cuotas se hace desde cada alumno`}
       />
-    <div className="page-container space-y-4">
-      <PageHeader title="Tarifas" description={`${filteredRules.length} reglas activas`} />
 
-      <Card>
+      <Card className="overflow-hidden">
         <ListToolbar
           search={search}
           onSearchChange={setSearch}
@@ -128,7 +125,7 @@ export function TariffsPage() {
                           if (confirm("¿Eliminar esta tarifa?")) removeRule.mutate(r.id);
                         }}
                       >
-                        <Trash2 className="h-4 w-4 text-expense" />
+                        <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     </td>
                   ) : null}
