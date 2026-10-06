@@ -1,18 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { GraduationCap, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { ListPageLayout } from "@/components/layout/ListPageLayout";
+import { QueryState } from "@/components/layout/QueryState";
 import {
   DataTable,
+  DataTableActions,
   DataTableHead,
   DataTableRow,
   DataTableTd,
   DataTableTh,
 } from "@/components/list/DataTable";
 import { ListToolbar } from "@/components/list/ListToolbar";
-import { PageHeader } from "@/components/list/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
 import { buildQuery } from "@/lib/utils";
@@ -47,27 +48,42 @@ export function StudentsPage() {
   });
 
   return (
-    <div className="space-y-4">
-      <PageHeader
-        title="Alumnos"
-        description={`${q.data?.total ?? 0} registrados`}
-        actions={
-          isAdmin ? (
-            <Button asChild>
-              <Link to="/alumnos/nuevo">
-                <Plus className="h-4 w-4" /> Nuevo alumno
-              </Link>
-            </Button>
-          ) : null
-        }
-      />
-      <Card>
+    <ListPageLayout
+      title="Alumnos"
+      description={`${q.data?.total ?? 0} registrados`}
+      actions={
+        isAdmin ? (
+          <Button asChild>
+            <Link to="/alumnos/nuevo">
+              <Plus className="h-4 w-4" /> Nuevo alumno
+            </Link>
+          </Button>
+        ) : null
+      }
+      toolbar={
         <ListToolbar
           search={search}
           onSearchChange={setSearch}
           searchPlaceholder="Buscar por nombre o email…"
         />
-        <CardContent className="pt-4">
+      }
+      footer={q.data ? `${q.data.items.length} filas mostradas` : undefined}
+    >
+      <QueryState
+        query={q}
+        empty={!q.data?.items.length}
+        emptyIcon={GraduationCap}
+        emptyTitle="No hay alumnos"
+        emptyDescription="Ajusta la búsqueda o crea un nuevo alumno."
+        emptyAction={
+          isAdmin ? (
+            <Button asChild size="sm">
+              <Link to="/alumnos/nuevo">Nuevo alumno</Link>
+            </Button>
+          ) : undefined
+        }
+      >
+        {(data) => (
           <DataTable>
             <DataTableHead>
               <DataTableTh>Nombre</DataTableTh>
@@ -78,7 +94,7 @@ export function StudentsPage() {
               <DataTableTh className="w-24" />
             </DataTableHead>
             <tbody>
-              {q.data?.items.map((s) => (
+              {data.items.map((s) => (
                 <DataTableRow key={s.id}>
                   <DataTableTd className="font-medium">
                     {s.lastName}, {s.firstName}
@@ -91,9 +107,11 @@ export function StudentsPage() {
                       : "—"}
                   </DataTableTd>
                   <DataTableTd>
-                    <Badge>{s.status === "ACTIVE" ? "Activo" : "Inactivo"}</Badge>
+                    <Badge variant={s.status === "ACTIVE" ? "success" : "secondary"}>
+                      {s.status === "ACTIVE" ? "Activo" : "Inactivo"}
+                    </Badge>
                   </DataTableTd>
-                  <DataTableTd className="text-right">
+                  <DataTableActions>
                     <Button
                       size="icon"
                       variant="ghost"
@@ -111,16 +129,16 @@ export function StudentsPage() {
                           if (confirm("¿Dar de baja a este alumno?")) remove.mutate(s.id);
                         }}
                       >
-                        <Trash2 className="h-4 w-4 text-expense" />
+                        <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     ) : null}
-                  </DataTableTd>
+                  </DataTableActions>
                 </DataTableRow>
               ))}
             </tbody>
           </DataTable>
-        </CardContent>
-      </Card>
-    </div>
+        )}
+      </QueryState>
+    </ListPageLayout>
   );
 }

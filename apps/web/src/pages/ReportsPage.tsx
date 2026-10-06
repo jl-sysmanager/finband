@@ -11,6 +11,7 @@ import {
   DataTableTh,
 } from "@/components/list/DataTable";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MonthSelect } from "@/components/form/MonthSelect";
 import { YearSelect } from "@/components/form/YearSelect";
@@ -246,7 +247,7 @@ export function ReportsPage() {
   }, [pdfFetchUrl]);
 
   return (
-    <div className="space-y-4">
+    <div className="page-container space-y-4">
       <PageHeader
         title="Informes"
         description="Previsualiza los datos antes de exportar a PDF o Excel"
@@ -321,7 +322,7 @@ export function ReportsPage() {
                   <Eye className="h-4 w-4" /> Vista previa de datos
                 </p>
                 {preview.isLoading ? (
-                  <p className="text-sm text-muted-foreground">Cargando…</p>
+                  <Skeleton className="h-32 w-full" />
                 ) : preview.isError ? (
                   <p className="text-sm text-destructive">No se pudo cargar la previsualización.</p>
                 ) : (

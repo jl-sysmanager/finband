@@ -112,7 +112,7 @@ export function TariffsPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="page-container space-y-4">
       <PageHeader title="Tarifas" description={`${filteredRules.length} reglas activas`} />
 
       <div className="grid gap-4 lg:grid-cols-2">

@@ -11,7 +11,7 @@ export function DataTable({ children, className }: { children: ReactNode; classN
 
 export function DataTableHead({ children }: { children: ReactNode }) {
   return (
-    <thead>
+    <thead className="sticky top-0 z-10 bg-card">
       <tr className="border-b border-border text-left text-muted-foreground">{children}</tr>
     </thead>
   );
@@ -24,7 +24,7 @@ export function DataTableTh({
   children?: ReactNode;
   className?: string;
 }) {
-  return <th className={cn("pb-2 pr-3 font-medium", className)}>{children}</th>;
+  return <th className={cn("px-4 py-3 font-medium", className)}>{children}</th>;
 }
 
 export function DataTableRow({
@@ -57,5 +57,13 @@ export function DataTableTd({
   children: ReactNode;
   className?: string;
 }) {
-  return <td className={cn("py-2 pr-3 align-middle", className)}>{children}</td>;
+  return <td className={cn("px-4 py-3 align-middle", className)}>{children}</td>;
+}
+
+export function DataTableActions({ children }: { children: ReactNode }) {
+  return (
+    <DataTableTd className="text-right">
+      <div className="flex justify-end gap-1">{children}</div>
+    </DataTableTd>
+  );
 }

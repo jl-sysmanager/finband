@@ -1,21 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { api } from "@/lib/api";
-import { buildQuery, formatMoney } from "@/lib/utils";
-import { useAuth } from "@/stores/auth";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2, Users } from "lucide-react";
 import { useState } from "react";
-import { PageHeader } from "@/components/list/PageHeader";
-import { ListToolbar } from "@/components/list/ListToolbar";
+import { ListPageLayout } from "@/components/layout/ListPageLayout";
+import { QueryState } from "@/components/layout/QueryState";
 import {
   DataTable,
+  DataTableActions,
   DataTableHead,
   DataTableRow,
   DataTableTd,
   DataTableTh,
 } from "@/components/list/DataTable";
+import { ListToolbar } from "@/components/list/ListToolbar";
+import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api";
+import { buildQuery, formatMoney } from "@/lib/utils";
+import { useAuth } from "@/stores/auth";
 
 export function TeachersPage() {
   const [search, setSearch] = useState("");
@@ -43,27 +44,34 @@ export function TeachersPage() {
   });
 
   return (
-    <div className="space-y-4">
-      <PageHeader
-        title="Profesores"
-        description={`${q.data?.length ?? 0} en plantilla`}
-        actions={
-          isAdmin ? (
-            <Button asChild>
-              <Link to="/profesores/nuevo">
-                <Plus className="h-4 w-4" /> Nuevo profesor
-              </Link>
-            </Button>
-          ) : null
-        }
-      />
-      <Card>
+    <ListPageLayout
+      title="Profesores"
+      description={`${q.data?.length ?? 0} en plantilla`}
+      actions={
+        isAdmin ? (
+          <Button asChild>
+            <Link to="/profesores/nuevo">
+              <Plus className="h-4 w-4" /> Nuevo profesor
+            </Link>
+          </Button>
+        ) : null
+      }
+      toolbar={
         <ListToolbar
           search={search}
           onSearchChange={setSearch}
           searchPlaceholder="Buscar por nombre o especialidad…"
         />
-        <CardContent className="pt-4">
+      }
+    >
+      <QueryState
+        query={q}
+        empty={!q.data?.length}
+        emptyIcon={Users}
+        emptyTitle="No hay profesores"
+        emptyDescription="Crea un profesor para asignar clases."
+      >
+        {(data) => (
           <DataTable>
             <DataTableHead>
               <DataTableTh>Nombre</DataTableTh>
@@ -73,7 +81,7 @@ export function TeachersPage() {
               <DataTableTh className="w-24" />
             </DataTableHead>
             <tbody>
-              {q.data?.map((t) => (
+              {data.map((t) => (
                 <DataTableRow key={t.id}>
                   <DataTableTd className="font-medium">
                     {t.lastName}, {t.firstName}
@@ -81,7 +89,7 @@ export function TeachersPage() {
                   <DataTableTd>{t.specialty ?? "—"}</DataTableTd>
                   <DataTableTd>{formatMoney(t.hourlyRate)}</DataTableTd>
                   <DataTableTd>{t.classGroups?.length ?? 0}</DataTableTd>
-                  <DataTableTd className="text-right">
+                  <DataTableActions>
                     <Button
                       size="icon"
                       variant="ghost"
@@ -99,16 +107,16 @@ export function TeachersPage() {
                           if (confirm("¿Eliminar este profesor?")) remove.mutate(t.id);
                         }}
                       >
-                        <Trash2 className="h-4 w-4 text-expense" />
+                        <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     ) : null}
-                  </DataTableTd>
+                  </DataTableActions>
                 </DataTableRow>
               ))}
             </tbody>
           </DataTable>
-        </CardContent>
-      </Card>
-    </div>
+        )}
+      </QueryState>
+    </ListPageLayout>
   );
 }

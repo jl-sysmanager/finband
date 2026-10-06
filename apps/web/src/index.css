@@ -9,12 +9,29 @@
   --color-card-foreground: hsl(222 47% 11%);
   --color-primary: hsl(221 83% 53%);
   --color-primary-foreground: hsl(0 0% 100%);
+  --color-secondary: hsl(210 20% 96%);
+  --color-secondary-foreground: hsl(222 47% 11%);
   --color-muted: hsl(210 16% 93%);
   --color-muted-foreground: hsl(215 16% 47%);
+  --color-accent: hsl(221 83% 96%);
+  --color-accent-foreground: hsl(221 83% 40%);
   --color-border: hsl(214 20% 88%);
+  --color-sidebar: hsl(222 47% 11%);
+  --color-sidebar-foreground: hsl(210 25% 92%);
+  --color-sidebar-muted: hsl(215 20% 65%);
+  --color-sidebar-accent: hsl(221 83% 53%);
+  --color-destructive: hsl(0 72% 51%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-success: hsl(142 71% 45%);
+  --color-success-foreground: hsl(0 0% 100%);
+  --color-warning: hsl(38 92% 50%);
+  --color-warning-foreground: hsl(0 0% 100%);
   --color-income: hsl(142 71% 45%);
   --color-expense: hsl(0 72% 51%);
+  --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06);
 }
 
 .dark {
@@ -24,9 +41,22 @@
   --color-card-foreground: hsl(210 40% 98%);
   --color-primary: hsl(217 91% 60%);
   --color-primary-foreground: hsl(0 0% 100%);
+  --color-secondary: hsl(217 33% 15%);
+  --color-secondary-foreground: hsl(210 40% 98%);
   --color-muted: hsl(217 33% 17%);
   --color-muted-foreground: hsl(215 20% 65%);
+  --color-accent: hsl(217 33% 20%);
+  --color-accent-foreground: hsl(217 91% 70%);
   --color-border: hsl(217 33% 20%);
+  --color-sidebar: hsl(222 47% 6%);
+  --color-sidebar-foreground: hsl(210 25% 92%);
+  --color-sidebar-muted: hsl(215 20% 55%);
+  --color-sidebar-accent: hsl(217 91% 60%);
+  --color-destructive: hsl(0 62% 55%);
+  --color-success: hsl(142 60% 45%);
+  --color-warning: hsl(38 85% 55%);
+  --color-income: hsl(142 60% 50%);
+  --color-expense: hsl(0 62% 55%);
 }
 
 @layer base {
@@ -36,5 +66,14 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-primary/40 ring-offset-2 ring-offset-background;
+  }
+}
+
+@layer components {
+  .page-container {
+    @apply mx-auto w-full max-w-7xl space-y-6;
   }
 }

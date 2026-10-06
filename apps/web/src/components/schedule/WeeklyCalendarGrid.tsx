@@ -37,8 +37,28 @@ export function WeeklyCalendarGrid({ weekStartIso, occurrences, isAdmin, onCance
 
   const active = occurrences.filter((o) => !o.cancelled);
 
+  const cancelledCount = occurrences.filter((o) => o.cancelled).length;
+
   return (
-    <div className="overflow-x-auto rounded-xl border border-border bg-card">
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-2">
+          <span className="h-3 w-5 rounded border border-primary/40 bg-primary/15" />
+          Sesión programada
+        </span>
+        {cancelledCount > 0 ? (
+          <span className="inline-flex items-center gap-2">
+            <span className="h-3 w-5 rounded border border-dashed border-muted-foreground/50 bg-muted/50" />
+            {cancelledCount} suspendida(s) esta semana (listado inferior)
+          </span>
+        ) : null}
+        {isAdmin ? (
+          <span className="inline-flex items-center gap-1">
+            <X className="h-3 w-3" /> Suspender sesión puntual
+          </span>
+        ) : null}
+      </div>
+      <div className="overflow-x-auto rounded-xl border border-border bg-card">
       <div className="min-w-[720px]">
         <div className="grid grid-cols-[56px_repeat(7,1fr)] border-b border-border bg-muted/40 text-xs font-medium">
           <div className="p-2" />
@@ -126,6 +146,7 @@ export function WeeklyCalendarGrid({ weekStartIso, occurrences, isAdmin, onCance
           })}
         </div>
       </div>
+    </div>
     </div>
   );
 }
