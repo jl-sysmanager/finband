@@ -16,7 +16,8 @@ import { ListToolbar } from "@/components/list/ListToolbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { api } from "@/lib/api";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ApiError, api } from "@/lib/api";
 import { buildQuery } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 
@@ -33,6 +34,7 @@ type StudentRow = {
 export function StudentsPage() {
   const [search, setSearch] = useState("");
   const [feeStudent, setFeeStudent] = useState<StudentRow | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
@@ -46,11 +48,32 @@ export function StudentsPage() {
 
   const remove = useMutation({
     mutationFn: (id: string) => api(`/students/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["students"] }),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["students"] });
+      setFeeStudent((prev) => (prev?.id === id ? null : prev));
+      setDeleteError(null);
+    },
   });
+
+  async function deleteStudent(student: StudentRow, e?: React.MouseEvent) {
+    e?.stopPropagation();
+    if (!isAdmin) return;
+    if (!confirm(`¿Dar de baja a ${student.firstName} ${student.lastName}?`)) return;
+    setDeleteError(null);
+    try {
+      await remove.mutateAsync(student.id);
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : "No se pudo dar de baja al alumno");
+    }
+  }
 
   return (
     <>
+      {deleteError ? (
+        <Alert variant="destructive" className="page-container mb-4">
+          <AlertDescription>{deleteError}</AlertDescription>
+        </Alert>
+      ) : null}
       {feeStudent ? (
         <Card className="page-container mb-4">
           <CardHeader className="flex flex-row items-start justify-between gap-2">
@@ -150,9 +173,8 @@ export function StudentsPage() {
                             size="icon"
                             variant="ghost"
                             aria-label="Baja alumno"
-                            onClick={() => {
-                              if (confirm("¿Dar de baja a este alumno?")) remove.mutate(s.id);
-                            }}
+                            disabled={remove.isPending}
+                            onClick={(e) => void deleteStudent(s, e)}
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>

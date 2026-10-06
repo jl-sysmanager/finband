@@ -41,6 +41,7 @@ export function FinancePage({ mode }: FinanceProps) {
   const isIncome = mode === "incomes";
   const [editing, setEditing] = useState<Entry | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [from, setFrom] = useState(firstDayOfCurrentMonthISO());
   const [to, setTo] = useState(todayISO());
@@ -73,16 +74,18 @@ export function FinancePage({ mode }: FinanceProps) {
   });
 
   const save = useMutation({
-    mutationFn: (body: Record<string, unknown> & { id?: string }) =>
-      body.id
-        ? api(`/finance/${isIncome ? "incomes" : "expenses"}/${body.id}`, {
+    mutationFn: (body: Record<string, unknown> & { id?: string }) => {
+      const { id, ...data } = body;
+      return id
+        ? api(`/finance/${isIncome ? "incomes" : "expenses"}/${id}`, {
             method: "PATCH",
-            body: JSON.stringify(body),
+            body: JSON.stringify(data),
           })
         : api(`/finance/${isIncome ? "incomes" : "expenses"}`, {
             method: "POST",
-            body: JSON.stringify(body),
-          }),
+            body: JSON.stringify(data),
+          });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [mode] });
       setEditing(null);
@@ -92,8 +95,24 @@ export function FinancePage({ mode }: FinanceProps) {
   const remove = useMutation({
     mutationFn: (id: string) =>
       api(`/finance/${isIncome ? "incomes" : "expenses"}/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [mode] }),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: [mode] });
+      setEditing((prev) => (prev?.id === id ? null : prev));
+      setDeleteError(null);
+    },
   });
+
+  async function deleteEntry(entry: Entry, e?: React.MouseEvent) {
+    e?.stopPropagation();
+    if (!isAdmin) return;
+    if (!confirm(`¿Eliminar el movimiento «${entry.concept}»?`)) return;
+    setDeleteError(null);
+    try {
+      await remove.mutateAsync(entry.id);
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : "No se pudo eliminar el movimiento");
+    }
+  }
 
   function toDateInput(iso: string) {
     return iso.slice(0, 10);
@@ -131,6 +150,11 @@ export function FinancePage({ mode }: FinanceProps) {
         title={isIncome ? "Ingresos" : "Gastos"}
         description={`${filteredEntries.length} movimientos en el periodo`}
       />
+      {deleteError ? (
+        <Alert variant="destructive">
+          <AlertDescription>{deleteError}</AlertDescription>
+        </Alert>
+      ) : null}
       {isAdmin ? (
         <Card>
           <CardHeader>
@@ -205,21 +229,31 @@ export function FinancePage({ mode }: FinanceProps) {
                     <AlertDescription>{saveError}</AlertDescription>
                   </Alert>
                 ) : null}
-                <div className="md:col-span-3 flex gap-2">
+                <div className="md:col-span-3 flex flex-wrap gap-2">
                   <Button type="submit" className="w-fit" disabled={save.isPending}>
                     {editing ? "Guardar" : "Registrar"}
                   </Button>
                   {editing ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        setEditing(null);
-                        setSaveError(null);
-                      }}
-                    >
-                      Cancelar
-                    </Button>
+                    <>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        disabled={remove.isPending}
+                        onClick={() => void deleteEntry(editing)}
+                      >
+                        <Trash2 className="h-4 w-4" /> Eliminar
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setEditing(null);
+                          setSaveError(null);
+                        }}
+                      >
+                        Cancelar
+                      </Button>
+                    </>
                   ) : null}
                 </div>
               </form>
@@ -252,7 +286,12 @@ export function FinancePage({ mode }: FinanceProps) {
               {filteredEntries.map((e) => (
                 <DataTableRow
                   key={e.id}
-                  onClick={() => isAdmin && setEditing(e)}
+                  onClick={() => {
+                    if (!isAdmin) return;
+                    setSaveError(null);
+                    setDeleteError(null);
+                    setEditing(e);
+                  }}
                 >
                   <DataTableTd>{formatDate(e.date)}</DataTableTd>
                   <DataTableTd>{e.concept}</DataTableTd>
@@ -276,9 +315,8 @@ export function FinancePage({ mode }: FinanceProps) {
                         size="icon"
                         variant="ghost"
                         aria-label="Eliminar movimiento"
-                        onClick={() => {
-                          if (confirm("¿Eliminar este movimiento?")) remove.mutate(e.id);
-                        }}
+                        disabled={remove.isPending}
+                        onClick={(ev) => void deleteEntry(e, ev)}
                       >
                         <Trash2 className="h-4 w-4 text-expense" />
                       </Button>

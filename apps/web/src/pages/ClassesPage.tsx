@@ -35,6 +35,7 @@ export function ClassesPage() {
   const weekStart = useMemo(() => mondayOfWeek(weekAnchor), [weekAnchor]);
   const weekEnd = useMemo(() => addDaysIso(weekStart, 6), [weekStart]);
   const [calendarError, setCalendarError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const q = useQuery({
     queryKey: ["classes", search],
@@ -104,8 +105,24 @@ export function ClassesPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["classes"] });
       qc.invalidateQueries({ queryKey: ["schedule-occurrences"] });
+      setDeleteError(null);
     },
   });
+
+  async function deleteClass(
+    cls: { id: string; name: string },
+    e?: React.MouseEvent,
+  ) {
+    e?.stopPropagation();
+    if (!isAdmin) return;
+    if (!confirm(`¿Eliminar la clase «${cls.name}»?`)) return;
+    setDeleteError(null);
+    try {
+      await remove.mutateAsync(cls.id);
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : "No se pudo eliminar la clase");
+    }
+  }
 
   const items = useMemo(() => {
     const list = occurrences.data?.items ?? [];
@@ -146,6 +163,12 @@ export function ClassesPage() {
           </div>
         }
       />
+
+      {deleteError ? (
+        <Alert variant="destructive">
+          <AlertDescription>{deleteError}</AlertDescription>
+        </Alert>
+      ) : null}
 
       <Card className="overflow-hidden">
         <ListToolbar
@@ -271,9 +294,8 @@ export function ClassesPage() {
                           size="icon"
                           variant="ghost"
                           aria-label="Eliminar clase"
-                          onClick={() => {
-                            if (confirm("¿Eliminar esta clase?")) remove.mutate(c.id);
-                          }}
+                          disabled={remove.isPending}
+                          onClick={(e) => void deleteClass(c, e)}
                         >
                           <Trash2 className="h-4 w-4 text-expense" />
                         </Button>

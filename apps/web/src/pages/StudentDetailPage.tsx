@@ -26,6 +26,7 @@ export function StudentDetailPage() {
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
   const [tab, setTab] = useState("personal");
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const student = useQuery({
     queryKey: ["student", id],
@@ -60,8 +61,25 @@ export function StudentDetailPage() {
 
   const deleteFee = useMutation({
     mutationFn: (feeId: string) => api(`/payments/student-fees/${feeId}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["student", id] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["student", id] });
+      setDeleteError(null);
+    },
   });
+
+  async function deleteStudentFee(feeId: string) {
+    if (
+      !confirm("¿Eliminar esta cuota? Se borrarán también los cobros asociados.")
+    ) {
+      return;
+    }
+    setDeleteError(null);
+    try {
+      await deleteFee.mutateAsync(feeId);
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : "No se pudo eliminar la cuota");
+    }
+  }
 
   const s = student.data as {
     firstName?: string;
@@ -151,8 +169,16 @@ export function StudentDetailPage() {
           <Button
             variant="destructive"
             size="sm"
-            onClick={() => {
-              if (confirm("¿Dar de baja a este alumno?")) remove.mutate();
+            onClick={async () => {
+              if (!confirm("¿Dar de baja a este alumno?")) return;
+              setDeleteError(null);
+              try {
+                await remove.mutateAsync();
+              } catch (err) {
+                setDeleteError(
+                  err instanceof ApiError ? err.message : "No se pudo dar de baja al alumno",
+                );
+              }
             }}
           >
             Baja lógica
@@ -284,15 +310,8 @@ export function StudentDetailPage() {
                                     size="icon"
                                     variant="ghost"
                                     aria-label="Eliminar cuota"
-                                    onClick={() => {
-                                      if (
-                                        confirm(
-                                          "¿Eliminar esta cuota? Se borrarán también los cobros asociados.",
-                                        )
-                                      ) {
-                                        deleteFee.mutate(f.id);
-                                      }
-                                    }}
+                                    disabled={deleteFee.isPending}
+                                    onClick={() => void deleteStudentFee(f.id)}
                                   >
                                     <Trash2 className="h-4 w-4 text-destructive" />
                                   </Button>
@@ -312,6 +331,11 @@ export function StudentDetailPage() {
         {saveError ? (
           <Alert variant="destructive" className="mt-4">
             <AlertDescription>{saveError}</AlertDescription>
+          </Alert>
+        ) : null}
+        {deleteError ? (
+          <Alert variant="destructive" className="mt-4">
+            <AlertDescription>{deleteError}</AlertDescription>
           </Alert>
         ) : null}
       </form>

@@ -28,8 +28,12 @@ export async function tariffRoutes(app: FastifyInstance) {
     return prisma.tariffRule.update({ where: { id }, data: parsed.data });
   });
 
-  app.delete("/:id", async (request) => {
+  app.delete("/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const existing = await prisma.tariffRule.findUnique({ where: { id } });
+    if (!existing) {
+      return reply.status(404).send({ error: "Tarifa no encontrada" });
+    }
     await prisma.tariffRule.delete({ where: { id } });
     return { ok: true };
   });

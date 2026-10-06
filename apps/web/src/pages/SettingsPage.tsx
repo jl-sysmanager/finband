@@ -94,9 +94,10 @@ export function SettingsPage() {
 
   const deleteUser = useMutation({
     mutationFn: (id: string) => api(`/admin/users/${id}`, { method: "DELETE" }),
-    onSuccess: () => {
+    onSuccess: (_data, deletedId) => {
       qc.invalidateQueries({ queryKey: ["users"] });
       setUserError(null);
+      setEditingUserId((prev) => (prev === deletedId ? null : prev));
     },
     onError: (err) => {
       setUserError(err instanceof ApiError ? err.message : "No se pudo eliminar el usuario");
@@ -278,7 +279,8 @@ export function SettingsPage() {
                         variant="ghost"
                         aria-label="Eliminar usuario"
                         disabled={u.id === currentUser?.id}
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           if (confirm(`¿Eliminar al usuario ${u.username}?`)) deleteUser.mutate(u.id);
                         }}
                       >

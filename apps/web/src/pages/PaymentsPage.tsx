@@ -21,7 +21,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { selectClassName } from "@/lib/form-classes";
-import { api, downloadUrl } from "@/lib/api";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ApiError, api, downloadUrl } from "@/lib/api";
 import { buildQuery, currentYearMonth, formatDate, formatMoney } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 
@@ -73,6 +74,7 @@ export function PaymentsPage() {
   const [payFeeId, setPayFeeId] = useState("");
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState("EFECTIVO");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const feeQuery = buildQuery({
     monthFrom,
@@ -128,7 +130,10 @@ export function PaymentsPage() {
 
   const deletePayment = useMutation({
     mutationFn: (id: string) => api(`/payments/student-payments/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["student-fees"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["student-fees"] });
+      setDeleteError(null);
+    },
   });
 
   const genPayouts = useMutation({
@@ -154,17 +159,36 @@ export function PaymentsPage() {
 
   const deletePayout = useMutation({
     mutationFn: (id: string) => api(`/payments/teacher-payouts/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["teacher-payouts"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["teacher-payouts"] });
+      setDeleteError(null);
+    },
   });
 
   const deleteFee = useMutation({
     mutationFn: (id: string) => api(`/payments/student-fees/${id}`, { method: "DELETE" }),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ["student-fees"] });
-      setPayFeeId("");
-      setPayAmount("");
+      setPayFeeId((prev) => {
+        if (prev !== id) return prev;
+        setPayAmount("");
+        return "";
+      });
+      setDeleteError(null);
     },
   });
+
+  async function runDelete(
+    action: () => Promise<unknown>,
+    fallbackMessage: string,
+  ) {
+    setDeleteError(null);
+    try {
+      await action();
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : fallbackMessage);
+    }
+  }
 
   const resetPayoutPayment = useMutation({
     mutationFn: (id: string) =>
@@ -187,6 +211,12 @@ export function PaymentsPage() {
         title="Control de pagos"
         description="Cobros de alumnos y liquidaciones a profesores"
       />
+
+      {deleteError ? (
+        <Alert variant="destructive">
+          <AlertDescription>{deleteError}</AlertDescription>
+        </Alert>
+      ) : null}
 
       <Card className="overflow-hidden">
         <ListToolbar search={search} onSearchChange={setSearch} searchPlaceholder="Buscar por nombre…">
@@ -366,7 +396,12 @@ export function PaymentsPage() {
                                   f.payments.length > 0
                                     ? `¿Eliminar la cuota y sus ${f.payments.length} cobro(s)?`
                                     : "¿Eliminar esta cuota?";
-                                if (confirm(msg)) deleteFee.mutate(f.id);
+                                if (confirm(msg)) {
+                                  void runDelete(
+                                    () => deleteFee.mutateAsync(f.id),
+                                    "No se pudo eliminar la cuota",
+                                  );
+                                }
                               }}
                             >
                               <Trash2 className="h-4 w-4 text-expense" />
@@ -423,7 +458,12 @@ export function PaymentsPage() {
                                     size="icon"
                                     variant="ghost"
                                     onClick={() => {
-                                      if (confirm("¿Anular este cobro?")) deletePayment.mutate(p.id);
+                                      if (confirm("¿Anular este cobro?")) {
+                                        void runDelete(
+                                          () => deletePayment.mutateAsync(p.id),
+                                          "No se pudo anular el cobro",
+                                        );
+                                      }
                                     }}
                                   >
                                     <Trash2 className="h-4 w-4 text-expense" />
@@ -536,7 +576,12 @@ export function PaymentsPage() {
                             size="icon"
                             variant="ghost"
                             onClick={() => {
-                              if (confirm("¿Eliminar esta liquidación?")) deletePayout.mutate(p.id);
+                              if (confirm("¿Eliminar esta liquidación?")) {
+                                void runDelete(
+                                  () => deletePayout.mutateAsync(p.id),
+                                  "No se pudo eliminar la liquidación",
+                                );
+                              }
                             }}
                           >
                             <Trash2 className="h-4 w-4 text-expense" />

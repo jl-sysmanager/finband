@@ -15,7 +15,8 @@ import {
 import { ListToolbar } from "@/components/list/ListToolbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { api } from "@/lib/api";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ApiError, api } from "@/lib/api";
 import { buildQuery, formatMoney } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 
@@ -31,6 +32,7 @@ type TeacherRow = {
 export function TeachersPage() {
   const [search, setSearch] = useState("");
   const [payoutTeacher, setPayoutTeacher] = useState<TeacherRow | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
@@ -42,11 +44,32 @@ export function TeachersPage() {
 
   const remove = useMutation({
     mutationFn: (id: string) => api(`/teachers/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["teachers"] }),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["teachers"] });
+      setPayoutTeacher((prev) => (prev?.id === id ? null : prev));
+      setDeleteError(null);
+    },
   });
+
+  async function deleteTeacher(teacher: TeacherRow, e?: React.MouseEvent) {
+    e?.stopPropagation();
+    if (!isAdmin) return;
+    if (!confirm(`¿Eliminar a ${teacher.firstName} ${teacher.lastName}?`)) return;
+    setDeleteError(null);
+    try {
+      await remove.mutateAsync(teacher.id);
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : "No se pudo eliminar al profesor");
+    }
+  }
 
   return (
     <>
+      {deleteError ? (
+        <Alert variant="destructive" className="page-container mb-4">
+          <AlertDescription>{deleteError}</AlertDescription>
+        </Alert>
+      ) : null}
       {payoutTeacher ? (
         <Card className="page-container mb-4">
           <CardHeader className="flex flex-row items-start justify-between gap-2">
@@ -128,9 +151,8 @@ export function TeachersPage() {
                             size="icon"
                             variant="ghost"
                             aria-label="Eliminar profesor"
-                            onClick={() => {
-                              if (confirm("¿Eliminar este profesor?")) remove.mutate(t.id);
-                            }}
+                            disabled={remove.isPending}
+                            onClick={(e) => void deleteTeacher(t, e)}
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
