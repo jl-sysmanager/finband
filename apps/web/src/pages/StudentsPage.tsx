@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GraduationCap, Plus, Receipt, Trash2, X } from "lucide-react";
+import { GraduationCap, Plus, Receipt, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { StudentFeeGeneratePanel } from "@/components/fees/StudentFeeGeneratePanel";
@@ -13,13 +13,20 @@ import {
   DataTableTh,
 } from "@/components/list/DataTable";
 import { ListToolbar } from "@/components/list/ListToolbar";
+import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ApiError, api } from "@/lib/api";
 import { buildQuery } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
+import { useConfirm } from "@/hooks/useConfirm";
 
 type StudentRow = {
   id: string;
@@ -38,6 +45,8 @@ export function StudentsPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
+  const { confirm, dialog: confirmDialog } = useConfirm();
+
   const q = useQuery({
     queryKey: ["students", search],
     queryFn: () =>
@@ -55,10 +64,15 @@ export function StudentsPage() {
     },
   });
 
-  async function deleteStudent(student: StudentRow, e?: React.MouseEvent) {
-    e?.stopPropagation();
+  async function deleteStudent(student: StudentRow) {
     if (!isAdmin) return;
-    if (!confirm(`¿Dar de baja a ${student.firstName} ${student.lastName}?`)) return;
+    const ok = await confirm({
+      title: "Dar de baja al alumno",
+      description: `¿Dar de baja a ${student.firstName} ${student.lastName}?`,
+      confirmLabel: "Dar de baja",
+      destructive: true,
+    });
+    if (!ok) return;
     setDeleteError(null);
     try {
       await remove.mutateAsync(student.id);
@@ -69,36 +83,35 @@ export function StudentsPage() {
 
   return (
     <>
+      {confirmDialog}
       {deleteError ? (
         <Alert variant="destructive" className="page-container mb-4">
           <AlertDescription>{deleteError}</AlertDescription>
         </Alert>
       ) : null}
-      {feeStudent ? (
-        <Card className="page-container mb-4">
-          <CardHeader className="flex flex-row items-start justify-between gap-2">
-            <CardTitle className="text-base">
-              Cuota — {feeStudent.lastName}, {feeStudent.firstName}
-            </CardTitle>
-            <Button type="button" size="icon" variant="ghost" onClick={() => setFeeStudent(null)}>
-              <X className="h-4 w-4" />
-            </Button>
-          </CardHeader>
-          <CardContent>
+
+      <Dialog open={!!feeStudent} onOpenChange={(o) => !o && setFeeStudent(null)}>
+        <DialogContent size="md">
+          <DialogHeader>
+            <DialogTitle>
+              Cuota — {feeStudent?.lastName}, {feeStudent?.firstName}
+            </DialogTitle>
+          </DialogHeader>
+          {feeStudent ? (
             <StudentFeeGeneratePanel
               studentId={feeStudent.id}
               onGenerated={() => setFeeStudent(null)}
             />
-          </CardContent>
-        </Card>
-      ) : null}
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       <ListPageLayout
         title="Alumnos"
         description={`${q.data?.total ?? 0} registrados`}
         actions={
           isAdmin ? (
-            <Button asChild>
+            <Button asChild size="sm">
               <Link to="/alumnos/nuevo">
                 <Plus className="h-4 w-4" /> Nuevo alumno
               </Link>
@@ -136,7 +149,7 @@ export function StudentsPage() {
                 <DataTableTh>Nivel</DataTableTh>
                 <DataTableTh>Profesor</DataTableTh>
                 <DataTableTh>Estado</DataTableTh>
-                <DataTableTh className="w-28" />
+                {isAdmin ? <DataTableTh className="w-14" /> : null}
               </DataTableHead>
               <tbody>
                 {data.items.map((s) => (
@@ -156,31 +169,26 @@ export function StudentsPage() {
                         {s.status === "ACTIVE" ? "Activo" : "Inactivo"}
                       </Badge>
                     </DataTableTd>
-                    <DataTableTd className="text-right" onClick={(e) => e.stopPropagation()}>
-                      {isAdmin ? (
-                        <>
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant="ghost"
-                            aria-label="Generar cuota"
-                            onClick={() => setFeeStudent(s)}
-                          >
-                            <Receipt className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant="ghost"
-                            aria-label="Baja alumno"
-                            disabled={remove.isPending}
-                            onClick={(e) => void deleteStudent(s, e)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </>
-                      ) : null}
-                    </DataTableTd>
+                    {isAdmin ? (
+                      <DataTableTd className="text-right" onClick={(e) => e.stopPropagation()}>
+                        <RowActionsMenu
+                          actions={[
+                            {
+                              label: "Generar cuota",
+                              icon: <Receipt className="h-4 w-4" />,
+                              onSelect: () => setFeeStudent(s),
+                            },
+                            {
+                              label: "Dar de baja",
+                              icon: <Trash2 className="h-4 w-4" />,
+                              destructive: true,
+                              disabled: remove.isPending,
+                              onSelect: () => void deleteStudent(s),
+                            },
+                          ]}
+                        />
+                      </DataTableTd>
+                    ) : null}
                   </DataTableRow>
                 ))}
               </tbody>

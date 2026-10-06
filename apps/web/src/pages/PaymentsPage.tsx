@@ -2,7 +2,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FEE_STATUS_LABELS, PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from "@finband/shared";
 import { FileText, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { FormSelect } from "@/components/form/FormSelect";
 import { MonthSelect } from "@/components/form/MonthSelect";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useConfirm } from "@/hooks/useConfirm";
 import { FilterField } from "@/components/list/FilterField";
 import { ListToolbar } from "@/components/list/ListToolbar";
 import { PageHeader } from "@/components/list/PageHeader";
@@ -20,7 +29,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { selectClassName } from "@/lib/form-classes";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ApiError, api, downloadUrl } from "@/lib/api";
 import { buildQuery, currentYearMonth, formatDate, formatMoney } from "@/lib/utils";
@@ -62,6 +70,27 @@ const PAYOUT_STATUS_LABELS: Record<string, string> = {
   PAID: "Pagado",
 };
 
+const ALL_FILTER = "__all__";
+
+const FEE_STATUS_FILTER = [
+  { value: ALL_FILTER, label: "Todos" },
+  { value: "PENDING", label: "Pendiente" },
+  { value: "PARTIAL", label: "Parcial" },
+  { value: "PAID", label: "Pagado" },
+];
+
+const PAYOUT_STATUS_FILTER = [
+  { value: ALL_FILTER, label: "Todos" },
+  { value: "PENDING", label: "Pendiente" },
+  { value: "PARTIAL", label: "Parcial" },
+  { value: "PAID", label: "Pagado" },
+];
+
+const METHOD_OPTIONS = PAYMENT_METHODS.map((m) => ({
+  value: m,
+  label: PAYMENT_METHOD_LABELS[m],
+}));
+
 export function PaymentsPage() {
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
   const qc = useQueryClient();
@@ -75,6 +104,8 @@ export function PaymentsPage() {
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState("EFECTIVO");
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [payOpen, setPayOpen] = useState(false);
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   const feeQuery = buildQuery({
     monthFrom,
@@ -119,12 +150,9 @@ export function PaymentsPage() {
           method: payMethod,
         }),
       }),
-    onSuccess: (data) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["student-fees"] });
       setPayAmount("");
-      if (data?.id && confirm("¿Descargar recibo del cobro?")) {
-        window.open(downloadUrl(`/reports/receipts/student-payment/${data.id}`), "_blank");
-      }
     },
   });
 
@@ -205,8 +233,98 @@ export function PaymentsPage() {
     setPayAmount(pending > 0 ? String(pending) : "");
   }
 
+  const pendingFeeOptions = useMemo(
+    () =>
+      (fees.data ?? [])
+        .map((f) => {
+          const pending = f.totalAmount - f.amountPaid;
+          if (pending <= 0) return null;
+          return {
+            value: f.id,
+            label: `${f.student.lastName}, ${f.student.firstName} · ${f.yearMonth} · pend. ${formatMoney(pending)}`,
+          };
+        })
+        .filter(Boolean) as { value: string; label: string }[],
+    [fees.data],
+  );
+
+  async function submitPayFee() {
+    try {
+      const data = await payFee.mutateAsync();
+      setPayOpen(false);
+      if (data?.id) {
+        const ok = await confirm({
+          title: "Recibo de cobro",
+          description: "¿Descargar recibo del cobro?",
+          confirmLabel: "Descargar",
+        });
+        if (ok) {
+          window.open(downloadUrl(`/reports/receipts/student-payment/${data.id}`), "_blank");
+        }
+      }
+    } catch {
+      /* mutation error surfaces via payFee.isError if needed */
+    }
+  }
+
+  async function confirmDeleteStudentFee(f: StudentFee) {
+    const ok = await confirm({
+      title: "Eliminar cuota",
+      description:
+        f.payments.length > 0
+          ? `¿Eliminar la cuota y sus ${f.payments.length} cobro(s)?`
+          : "¿Eliminar esta cuota?",
+      confirmLabel: "Eliminar",
+      destructive: true,
+    });
+    if (!ok) return;
+    await runDelete(() => deleteFee.mutateAsync(f.id), "No se pudo eliminar la cuota");
+  }
+
+  async function confirmVoidPayment(paymentId: string) {
+    const ok = await confirm({
+      title: "Anular cobro",
+      description: "¿Anular este cobro?",
+      confirmLabel: "Anular",
+      destructive: true,
+    });
+    if (!ok) return;
+    await runDelete(() => deletePayment.mutateAsync(paymentId), "No se pudo anular el cobro");
+  }
+
+  async function confirmPayTeacherPayout(p: PayoutRow) {
+    const ok = await confirm({
+      title: "Registrar pago",
+      description: `¿Registrar pago de ${formatMoney(p.amount - p.amountPaid)} a ${p.teacher.firstName} ${p.teacher.lastName}?`,
+      confirmLabel: "Registrar",
+    });
+    if (ok) payPayout.mutate(p);
+  }
+
+  async function confirmResetPayout(payoutId: string) {
+    const ok = await confirm({
+      title: "Anular pago",
+      description: "¿Anular el pago registrado y dejar la liquidación pendiente?",
+      confirmLabel: "Anular",
+      destructive: true,
+    });
+    if (ok) resetPayoutPayment.mutate(payoutId);
+  }
+
+  async function confirmDeletePayout(payoutId: string) {
+    const ok = await confirm({
+      title: "Eliminar liquidación",
+      description: "¿Eliminar esta liquidación?",
+      confirmLabel: "Eliminar",
+      destructive: true,
+    });
+    if (!ok) return;
+    await runDelete(() => deletePayout.mutateAsync(payoutId), "No se pudo eliminar la liquidación");
+  }
+
   return (
     <div className="page-container space-y-4">
+      {confirmDialog}
       <PageHeader
         title="Control de pagos"
         description="Cobros de alumnos y liquidaciones a profesores"
@@ -228,29 +346,19 @@ export function PaymentsPage() {
           </FilterField>
           {section === "students" ? (
             <FilterField label="Estado cuota">
-              <select
-                className={selectClassName}
-                value={feeStatus}
-                onChange={(e) => setFeeStatus(e.target.value)}
-              >
-                <option value="">Todos</option>
-                <option value="PENDING">Pendiente</option>
-                <option value="PARTIAL">Parcial</option>
-                <option value="PAID">Pagado</option>
-              </select>
+              <FormSelect
+                value={feeStatus || ALL_FILTER}
+                onValueChange={(v) => setFeeStatus(v === ALL_FILTER ? "" : v)}
+                options={FEE_STATUS_FILTER}
+              />
             </FilterField>
           ) : (
             <FilterField label="Estado liquidación">
-              <select
-                className={selectClassName}
-                value={payoutStatus}
-                onChange={(e) => setPayoutStatus(e.target.value)}
-              >
-                <option value="">Todos</option>
-                <option value="PENDING">Pendiente</option>
-                <option value="PARTIAL">Parcial</option>
-                <option value="PAID">Pagado</option>
-              </select>
+              <FormSelect
+                value={payoutStatus || ALL_FILTER}
+                onValueChange={(v) => setPayoutStatus(v === ALL_FILTER ? "" : v)}
+                options={PAYOUT_STATUS_FILTER}
+              />
             </FilterField>
           )}
         </ListToolbar>
@@ -269,75 +377,75 @@ export function PaymentsPage() {
         {section === "students" ? (
           <CardContent className="space-y-4 pt-6">
             {isAdmin ? (
-              <div className="rounded-lg border border-border bg-muted/30 p-4">
-                <p className="mb-3 text-sm font-medium">Registrar cobro</p>
-                <p className="mb-3 text-xs text-muted-foreground">
-                  Selecciona una cuota en la tabla o elige manualmente. Importe pendiente:{" "}
+              <div className="flex justify-end">
+                <Button size="sm" onClick={() => setPayOpen(true)}>
+                  Registrar cobro
+                </Button>
+              </div>
+            ) : null}
+
+            <Dialog open={payOpen} onOpenChange={setPayOpen}>
+              <DialogContent size="md">
+                <DialogHeader>
+                  <DialogTitle>Registrar cobro</DialogTitle>
+                </DialogHeader>
+                <p className="text-xs text-muted-foreground">
+                  Pendiente:{" "}
                   <span className="font-medium text-foreground">
                     {selectedFee
                       ? `${selectedFee.student.lastName}, ${selectedFee.student.firstName} (${selectedFee.yearMonth}) — ${formatMoney(pendingSelected)}`
-                      : "—"}
+                      : "Selecciona una cuota"}
                   </span>
                 </p>
-                <div className="flex flex-wrap items-end gap-3">
-                  <div className="min-w-[280px] flex-1 space-y-1">
+                <div className="grid gap-3">
+                  <div className="space-y-1">
                     <Label>Cuota</Label>
-                    <select
-                      className={selectClassName}
+                    <FormSelect
                       value={payFeeId}
-                      onChange={(e) => {
-                        const id = e.target.value;
+                      onValueChange={(id) => {
                         setPayFeeId(id);
                         const f = fees.data?.find((x) => x.id === id);
                         if (f) selectFee(f);
                       }}
-                    >
-                      <option value="">Seleccionar alumno y mes…</option>
-                      {fees.data?.map((f) => {
-                        const pending = f.totalAmount - f.amountPaid;
-                        if (pending <= 0) return null;
-                        return (
-                          <option key={f.id} value={f.id}>
-                            {f.student.lastName}, {f.student.firstName} · {f.yearMonth} · pend.{" "}
-                            {formatMoney(pending)}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
-                  <div className="w-32 space-y-1">
-                    <Label>Importe</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      value={payAmount}
-                      onChange={(e) => setPayAmount(e.target.value)}
+                      options={pendingFeeOptions}
+                      placeholder="Seleccionar alumno y mes…"
                     />
                   </div>
-                  <div className="w-40 space-y-1">
-                    <Label>Método</Label>
-                    <select
-                      className={selectClassName}
-                      value={payMethod}
-                      onChange={(e) => setPayMethod(e.target.value)}
-                    >
-                      {PAYMENT_METHODS.map((m) => (
-                        <option key={m} value={m}>
-                          {PAYMENT_METHOD_LABELS[m]}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <Label>Importe</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        value={payAmount}
+                        onChange={(e) => setPayAmount(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Método</Label>
+                      <FormSelect
+                        value={payMethod}
+                        onValueChange={setPayMethod}
+                        options={METHOD_OPTIONS}
+                      />
+                    </div>
                   </div>
-                  <Button
-                    disabled={!payFeeId || !payAmount || payFee.isPending}
-                    onClick={() => payFee.mutate()}
-                  >
-                    Registrar cobro
-                  </Button>
                 </div>
-              </div>
-            ) : null}
+                <DialogFooter className="pt-2">
+                  <Button variant="outline" size="sm" onClick={() => setPayOpen(false)}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={!payFeeId || !payAmount || payFee.isPending}
+                    onClick={() => void submitPayFee()}
+                  >
+                    Registrar
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             <DataTable>
               <DataTableHead>
@@ -380,6 +488,7 @@ export function PaymentsPage() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 selectFee(f);
+                                setPayOpen(true);
                               }}
                             >
                               Cobrar
@@ -392,16 +501,7 @@ export function PaymentsPage() {
                               aria-label="Eliminar cuota"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                const msg =
-                                  f.payments.length > 0
-                                    ? `¿Eliminar la cuota y sus ${f.payments.length} cobro(s)?`
-                                    : "¿Eliminar esta cuota?";
-                                if (confirm(msg)) {
-                                  void runDelete(
-                                    () => deleteFee.mutateAsync(f.id),
-                                    "No se pudo eliminar la cuota",
-                                  );
-                                }
+                                void confirmDeleteStudentFee(f);
                               }}
                             >
                               <Trash2 className="h-4 w-4 text-expense" />
@@ -457,14 +557,7 @@ export function PaymentsPage() {
                                   <Button
                                     size="icon"
                                     variant="ghost"
-                                    onClick={() => {
-                                      if (confirm("¿Anular este cobro?")) {
-                                        void runDelete(
-                                          () => deletePayment.mutateAsync(p.id),
-                                          "No se pudo anular el cobro",
-                                        );
-                                      }
-                                    }}
+                                    onClick={() => void confirmVoidPayment(p.id)}
                                   >
                                     <Trash2 className="h-4 w-4 text-expense" />
                                   </Button>
@@ -544,15 +637,7 @@ export function PaymentsPage() {
                           <Button
                             size="sm"
                             disabled={payPayout.isPending}
-                            onClick={() => {
-                              if (
-                                confirm(
-                                  `¿Registrar pago de ${formatMoney(p.amount - p.amountPaid)} a ${p.teacher.firstName} ${p.teacher.lastName}?`,
-                                )
-                              ) {
-                                payPayout.mutate(p);
-                              }
-                            }}
+                            onClick={() => void confirmPayTeacherPayout(p)}
                           >
                             Marcar pagado
                           </Button>
@@ -562,11 +647,7 @@ export function PaymentsPage() {
                             size="sm"
                             variant="outline"
                             disabled={resetPayoutPayment.isPending}
-                            onClick={() => {
-                              if (confirm("¿Anular el pago registrado y dejar la liquidación pendiente?")) {
-                                resetPayoutPayment.mutate(p.id);
-                              }
-                            }}
+                            onClick={() => void confirmResetPayout(p.id)}
                           >
                             Anular pago
                           </Button>
@@ -575,14 +656,7 @@ export function PaymentsPage() {
                           <Button
                             size="icon"
                             variant="ghost"
-                            onClick={() => {
-                              if (confirm("¿Eliminar esta liquidación?")) {
-                                void runDelete(
-                                  () => deletePayout.mutateAsync(p.id),
-                                  "No se pudo eliminar la liquidación",
-                                );
-                              }
-                            }}
+                            onClick={() => void confirmDeletePayout(p.id)}
                           >
                             <Trash2 className="h-4 w-4 text-expense" />
                           </Button>

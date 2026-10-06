@@ -12,10 +12,24 @@ import {
 } from "@/components/list/DataTable";
 import { PageHeader } from "@/components/list/PageHeader";
 import { ApiError, api, downloadUrl, uploadBackup } from "@/lib/api";
-import { selectClassName } from "@/lib/form-classes";
+import { FormSelect } from "@/components/form/FormSelect";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import { useAuth } from "@/stores/auth";
+import { useConfirm } from "@/hooks/useConfirm";
 import { Download, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
+
+const ROLE_OPTIONS = [
+  { value: "ADMIN", label: "Administrador" },
+  { value: "READONLY", label: "Consulta" },
+];
 
 export function SettingsPage() {
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
@@ -34,6 +48,7 @@ export function SettingsPage() {
   const [backupError, setBackupError] = useState<string | null>(null);
   const [backupOk, setBackupOk] = useState<string | null>(null);
   const [restorePending, setRestorePending] = useState(false);
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   const school = useQuery({
     queryKey: ["school"],
@@ -134,8 +149,19 @@ export function SettingsPage() {
     return <p className="text-destructive">No se pudo cargar la configuración.</p>;
   }
 
+  async function removeUser(userId: string, username: string) {
+    const ok = await confirm({
+      title: "Eliminar usuario",
+      description: `¿Eliminar al usuario ${username}?`,
+      confirmLabel: "Eliminar",
+      destructive: true,
+    });
+    if (ok) deleteUser.mutate(userId);
+  }
+
   return (
     <div className="page-container space-y-6">
+      {confirmDialog}
       <PageHeader title="Configuración del centro" description="Datos del centro y usuarios de acceso" />
 
       <form key={`school-${school.dataUpdatedAt}`} onSubmit={onSchoolSubmit}>
@@ -220,13 +246,14 @@ export function SettingsPage() {
                 disabled={!backupFile || restorePending}
                 onClick={async () => {
                   if (!backupFile) return;
-                  if (
-                    !confirm(
+                  const ok = await confirm({
+                    title: "Restaurar copia de seguridad",
+                    description:
                       "¿Restaurar esta copia? Se perderán los datos actuales no incluidos en el archivo. Se guardará una copia de seguridad automática antes de continuar.",
-                    )
-                  ) {
-                    return;
-                  }
+                    confirmLabel: "Restaurar",
+                    destructive: true,
+                  });
+                  if (!ok) return;
                   setRestorePending(true);
                   setBackupError(null);
                   setBackupOk(null);
@@ -273,29 +300,30 @@ export function SettingsPage() {
                     <DataTableTd className="font-medium">{u.username}</DataTableTd>
                     <DataTableTd>{u.role === "ADMIN" ? "Administrador" : "Consulta"}</DataTableTd>
                     <DataTableTd className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        aria-label="Eliminar usuario"
-                        disabled={u.id === currentUser?.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (confirm(`¿Eliminar al usuario ${u.username}?`)) deleteUser.mutate(u.id);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4 text-expense" />
-                      </Button>
+                      <RowActionsMenu
+                        actions={[
+                          { label: "Editar", onSelect: () => startEdit(u) },
+                          {
+                            label: "Eliminar",
+                            icon: <Trash2 className="h-4 w-4" />,
+                            destructive: true,
+                            disabled: u.id === currentUser?.id,
+                            onSelect: () => void removeUser(u.id, u.username),
+                          },
+                        ]}
+                      />
                     </DataTableTd>
                   </DataTableRow>
                 ))}
               </tbody>
             </DataTable>
 
-            {editingUserId ? (
-              <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-3">
-                <p className="text-sm font-medium">Editar usuario</p>
-                <div className="grid gap-2 md:grid-cols-3">
+            <Dialog open={!!editingUserId} onOpenChange={(o) => !o && setEditingUserId(null)}>
+              <DialogContent size="md">
+                <DialogHeader>
+                  <DialogTitle>Editar usuario</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-3">
                   <Input
                     placeholder="Usuario"
                     value={editUser.username}
@@ -307,26 +335,23 @@ export function SettingsPage() {
                     value={editUser.password}
                     onChange={(e) => setEditUser({ ...editUser, password: e.target.value })}
                   />
-                  <select
-                    className={selectClassName}
+                  <FormSelect
                     value={editUser.role}
+                    onValueChange={(role) => setEditUser({ ...editUser, role })}
+                    options={ROLE_OPTIONS}
                     disabled={editingUserId === currentUser?.id}
-                    onChange={(e) => setEditUser({ ...editUser, role: e.target.value })}
-                  >
-                    <option value="ADMIN">Administrador</option>
-                    <option value="READONLY">Consulta</option>
-                  </select>
+                  />
                 </div>
-                <div className="flex gap-2">
-                  <Button disabled={updateUser.isPending} onClick={() => updateUser.mutate()}>
-                    Guardar cambios
-                  </Button>
-                  <Button variant="outline" onClick={() => setEditingUserId(null)}>
+                <DialogFooter className="pt-2">
+                  <Button variant="outline" size="sm" onClick={() => setEditingUserId(null)}>
                     Cancelar
                   </Button>
-                </div>
-              </div>
-            ) : null}
+                  <Button size="sm" disabled={updateUser.isPending} onClick={() => updateUser.mutate()}>
+                    Guardar
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             <div className="border-t border-border pt-4">
               <p className="mb-2 text-sm font-medium">Nuevo usuario</p>
@@ -342,14 +367,11 @@ export function SettingsPage() {
                   value={newUser.password}
                   onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
                 />
-                <select
-                  className={selectClassName}
+                <FormSelect
                   value={newUser.role}
-                  onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-                >
-                  <option value="ADMIN">Administrador</option>
-                  <option value="READONLY">Consulta</option>
-                </select>
+                  onValueChange={(role) => setNewUser({ ...newUser, role })}
+                  options={ROLE_OPTIONS}
+                />
                 <Button disabled={createUser.isPending} onClick={() => createUser.mutate()}>
                   Crear usuario
                 </Button>

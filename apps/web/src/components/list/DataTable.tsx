@@ -24,7 +24,7 @@ export function DataTableTh({
   children?: ReactNode;
   className?: string;
 }) {
-  return <th className={cn("px-4 py-3 font-medium", className)}>{children}</th>;
+  return <th className={cn("px-3 py-2 font-medium", className)}>{children}</th>;
 }
 
 export function DataTableRow({
@@ -60,7 +60,7 @@ export function DataTableTd({
   onClick?: MouseEventHandler<HTMLTableCellElement>;
 }) {
   return (
-    <td className={cn("px-4 py-3 align-middle", className)} onClick={onClick}>
+    <td className={cn("px-3 py-2 align-middle", className)} onClick={onClick}>
       {children}
     </td>
   );

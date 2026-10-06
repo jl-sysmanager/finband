@@ -17,6 +17,7 @@ import { FEE_STATUS_LABELS } from "@finband/shared";
 import { StudentFeeGeneratePanel } from "@/components/fees/StudentFeeGeneratePanel";
 import { Trash2 } from "lucide-react";
 import { useState } from "react";
+import { useConfirm } from "@/hooks/useConfirm";
 
 export function StudentDetailPage() {
   const { id } = useParams();
@@ -27,6 +28,7 @@ export function StudentDetailPage() {
   const [tab, setTab] = useState("personal");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   const student = useQuery({
     queryKey: ["student", id],
@@ -68,11 +70,13 @@ export function StudentDetailPage() {
   });
 
   async function deleteStudentFee(feeId: string) {
-    if (
-      !confirm("¿Eliminar esta cuota? Se borrarán también los cobros asociados.")
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Eliminar cuota",
+      description: "¿Eliminar esta cuota? Se borrarán también los cobros asociados.",
+      confirmLabel: "Eliminar",
+      destructive: true,
+    });
+    if (!ok) return;
     setDeleteError(null);
     try {
       await deleteFee.mutateAsync(feeId);
@@ -154,6 +158,8 @@ export function StudentDetailPage() {
   }
 
   return (
+    <>
+      {confirmDialog}
     <DetailPageLayout
       backTo="/alumnos"
       title={isNew ? "Nuevo alumno" : displayName || "Alumno"}
@@ -170,7 +176,13 @@ export function StudentDetailPage() {
             variant="destructive"
             size="sm"
             onClick={async () => {
-              if (!confirm("¿Dar de baja a este alumno?")) return;
+              const ok = await confirm({
+                title: "Dar de baja",
+                description: "¿Dar de baja a este alumno?",
+                confirmLabel: "Dar de baja",
+                destructive: true,
+              });
+              if (!ok) return;
               setDeleteError(null);
               try {
                 await remove.mutateAsync();
@@ -340,5 +352,6 @@ export function StudentDetailPage() {
         ) : null}
       </form>
     </DetailPageLayout>
+    </>
   );
 }
