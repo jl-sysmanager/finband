@@ -2,9 +2,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CLASS_TYPES, CLASS_TYPE_LABELS } from "@finband/shared";
 import { Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  DataTable,
+  DataTableHead,
+  DataTableRow,
+  DataTableTd,
+  DataTableTh,
+} from "@/components/list/DataTable";
 import { ListToolbar } from "@/components/list/ListToolbar";
 import { PageHeader } from "@/components/list/PageHeader";
 import { ApiError, api } from "@/lib/api";
@@ -27,6 +35,7 @@ export function TariffsPage() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<Rule | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
   const rules = useQuery({
@@ -35,10 +44,12 @@ export function TariffsPage() {
   });
 
   const saveRule = useMutation({
-    mutationFn: (body: Record<string, unknown> & { id?: string }) =>
-      body.id
-        ? api(`/tariffs/${body.id}`, { method: "PATCH", body: JSON.stringify(body) })
-        : api("/tariffs", { method: "POST", body: JSON.stringify(body) }),
+    mutationFn: (body: Record<string, unknown> & { id?: string }) => {
+      const { id, ...data } = body;
+      return id
+        ? api(`/tariffs/${id}`, { method: "PATCH", body: JSON.stringify(data) })
+        : api("/tariffs", { method: "POST", body: JSON.stringify(data) });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tariffs"] });
       setEditing(null);
@@ -47,7 +58,11 @@ export function TariffsPage() {
 
   const removeRule = useMutation({
     mutationFn: (id: string) => api(`/tariffs/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["tariffs"] }),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["tariffs"] });
+      setEditing((prev) => (prev?.id === id ? null : prev));
+      setDeleteError(null);
+    },
   });
 
   const filteredRules = useMemo(() => {
@@ -60,6 +75,18 @@ export function TariffsPage() {
         (r.level?.toLowerCase().includes(s) ?? false),
     );
   }, [rules.data, search]);
+
+  async function deleteRule(rule: Rule, e?: React.MouseEvent) {
+    e?.stopPropagation();
+    if (!isAdmin) return;
+    if (!confirm(`¿Eliminar la tarifa «${rule.name}»?`)) return;
+    setDeleteError(null);
+    try {
+      await removeRule.mutateAsync(rule.id);
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : "No se pudo eliminar la tarifa");
+    }
+  }
 
   async function onSubmitRule(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -90,6 +117,12 @@ export function TariffsPage() {
         description={`${filteredRules.length} reglas · La generación de cuotas se hace desde cada alumno`}
       />
 
+      {deleteError ? (
+        <Alert variant="destructive">
+          <AlertDescription>{deleteError}</AlertDescription>
+        </Alert>
+      ) : null}
+
       <Card className="overflow-hidden">
         <ListToolbar
           search={search}
@@ -97,42 +130,43 @@ export function TariffsPage() {
           searchPlaceholder="Buscar tarifa, instrumento o nivel…"
         />
         <CardContent className="space-y-4 pt-4">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-muted-foreground">
-                <th className="pb-2">Nombre</th>
-                <th className="pb-2">Importe</th>
-                {isAdmin ? <th className="w-16 pb-2" /> : null}
-              </tr>
-            </thead>
+          <DataTable>
+            <DataTableHead>
+              <DataTableTh>Nombre</DataTableTh>
+              <DataTableTh>Importe</DataTableTh>
+              {isAdmin ? <DataTableTh className="w-16" /> : null}
+            </DataTableHead>
             <tbody>
               {filteredRules.map((r) => (
-                <tr
+                <DataTableRow
                   key={r.id}
-                  className="cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/40"
-                  onClick={() => isAdmin && setEditing(r)}
+                  onClick={() => {
+                    if (!isAdmin) return;
+                    setSaveError(null);
+                    setDeleteError(null);
+                    setEditing(r);
+                  }}
                 >
-                  <td className="py-2">{r.name}</td>
-                  <td>{formatMoney(r.amount)}</td>
+                  <DataTableTd>{r.name}</DataTableTd>
+                  <DataTableTd>{formatMoney(r.amount)}</DataTableTd>
                   {isAdmin ? (
-                    <td className="py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                    <DataTableTd className="text-right" onClick={(e) => e.stopPropagation()}>
                       <Button
                         type="button"
                         size="icon"
                         variant="ghost"
                         aria-label="Eliminar tarifa"
-                        onClick={() => {
-                          if (confirm("¿Eliminar esta tarifa?")) removeRule.mutate(r.id);
-                        }}
+                        disabled={removeRule.isPending}
+                        onClick={(e) => void deleteRule(r, e)}
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
-                    </td>
+                    </DataTableTd>
                   ) : null}
-                </tr>
+                </DataTableRow>
               ))}
             </tbody>
-          </table>
+          </DataTable>
           {isAdmin ? (
             <form
               key={editing?.id ?? "new"}
@@ -167,21 +201,31 @@ export function TariffsPage() {
               </select>
               <Input name="priority" type="number" placeholder="Prioridad" defaultValue={editing?.priority ?? 0} />
               {saveError ? <p className="md:col-span-2 text-sm text-destructive">{saveError}</p> : null}
-              <div className="md:col-span-2 flex gap-2">
+              <div className="md:col-span-2 flex flex-wrap gap-2">
                 <Button type="submit" disabled={saveRule.isPending}>
                   <Plus className="h-4 w-4" /> {editing ? "Guardar cambios" : "Añadir regla"}
                 </Button>
                 {editing ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setEditing(null);
-                      setSaveError(null);
-                    }}
-                  >
-                    Cancelar
-                  </Button>
+                  <>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      disabled={removeRule.isPending}
+                      onClick={() => void deleteRule(editing)}
+                    >
+                      <Trash2 className="h-4 w-4" /> Eliminar
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setEditing(null);
+                        setSaveError(null);
+                      }}
+                    >
+                      Cancelar
+                    </Button>
+                  </>
                 ) : null}
               </div>
             </form>
