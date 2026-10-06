@@ -8,6 +8,20 @@ export class ApiError extends Error {
   }
 }
 
+function requestHeaders(init?: RequestInit): Headers {
+  const headers = new Headers(init?.headers ?? undefined);
+  const body = init?.body;
+  const hasBody =
+    body != null &&
+    body !== "" &&
+    !(body instanceof FormData) &&
+    !(body instanceof URLSearchParams);
+  if (hasBody && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  return headers;
+}
+
 export async function api<T>(
   path: string,
   init?: RequestInit,
@@ -15,10 +29,7 @@ export async function api<T>(
   const res = await fetch(`/api/v1${path}`, {
     ...init,
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
+    headers: requestHeaders(init),
   });
 
   if (!res.ok) {
