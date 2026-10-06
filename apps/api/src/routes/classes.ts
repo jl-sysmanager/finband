@@ -101,6 +101,24 @@ export async function classRoutes(app: FastifyInstance) {
     });
   });
 
+  app.post("/schedule/cancellations/restore", async (request, reply) => {
+    const parsed = scheduleCancellationSchema
+      .pick({ scheduleSlotId: true, sessionDate: true })
+      .safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
+    }
+    const { scheduleSlotId, sessionDate } = parsed.data;
+    const row = await prisma.classScheduleCancellation.findUnique({
+      where: { scheduleSlotId_sessionDate: { scheduleSlotId, sessionDate } },
+    });
+    if (!row) return reply.status(404).send({ error: "No hay suspensión para esa sesión" });
+    await prisma.classScheduleCancellation.delete({
+      where: { scheduleSlotId_sessionDate: { scheduleSlotId, sessionDate } },
+    });
+    return { ok: true };
+  });
+
   app.delete("/schedule/cancellations/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     const row = await prisma.classScheduleCancellation.findUnique({ where: { id } });
