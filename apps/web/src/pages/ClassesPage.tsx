@@ -15,6 +15,8 @@ import {
 } from "@/components/list/DataTable";
 import { ListToolbar } from "@/components/list/ListToolbar";
 import { PageHeader } from "@/components/list/PageHeader";
+import { SegmentedControl } from "@/components/layout/SegmentedControl";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ApiError, api } from "@/lib/api";
@@ -120,26 +122,20 @@ export function ClassesPage() {
   const suspended = items.filter((o) => o.cancelled);
 
   return (
-    <div className="space-y-4">
+    <div className="page-container space-y-4">
       <PageHeader
         title="Clases"
         description={`${q.data?.length ?? 0} grupos`}
         actions={
-          <>
-            <Button
-              size="sm"
-              variant={view === "list" ? "default" : "outline"}
-              onClick={() => setView("list")}
-            >
-              Listado
-            </Button>
-            <Button
-              size="sm"
-              variant={view === "calendar" ? "default" : "outline"}
-              onClick={() => setView("calendar")}
-            >
-              Calendario
-            </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <SegmentedControl
+              value={view}
+              onChange={setView}
+              options={[
+                { value: "list", label: "Listado" },
+                { value: "calendar", label: "Calendario" },
+              ]}
+            />
             {isAdmin ? (
               <Button asChild>
                 <Link to="/clases/nueva">
@@ -147,11 +143,11 @@ export function ClassesPage() {
                 </Link>
               </Button>
             ) : null}
-          </>
+          </div>
         }
       />
 
-      <Card>
+      <Card className="overflow-hidden">
         <ListToolbar
           search={search}
           onSearchChange={setSearch}
@@ -200,7 +196,11 @@ export function ClassesPage() {
                 }
               }}
             />
-            {calendarError ? <p className="text-sm text-destructive">{calendarError}</p> : null}
+            {calendarError ? (
+              <Alert variant="destructive">
+                <AlertDescription>{calendarError}</AlertDescription>
+              </Alert>
+            ) : null}
             {suspended.length > 0 ? (
               <div className="rounded-lg border border-border bg-muted/20 p-3 text-sm">
                 <p className="mb-2 font-medium">Sesiones suspendidas esta semana</p>

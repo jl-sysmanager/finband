@@ -12,11 +12,24 @@ const OUT = path.join(__dirname, "../docs/Finband-manual-de-uso.pdf");
 
 const MUTED = "#64748b";
 const ACCENT = "#2563eb";
+const PAGE_MARGIN = 48;
+const FOOTER_ZONE = 36;
 
 type Doc = InstanceType<typeof PDFDocument>;
 
+function ensureSpace(doc: Doc, needed: number) {
+  const limit = doc.page.height - PAGE_MARGIN - FOOTER_ZONE;
+  if (doc.y + needed > limit) doc.addPage();
+}
+
+function footerText(doc: Doc, text: string, y: number) {
+  const w = doc.widthOfString(text);
+  const x = Math.max(PAGE_MARGIN, (doc.page.width - w) / 2);
+  doc.text(text, x, y, { lineBreak: false });
+}
+
 function heading(doc: Doc, text: string, level: 1 | 2 = 1) {
-  if (doc.y > doc.page.height - 90) doc.addPage();
+  ensureSpace(doc, level === 1 ? 48 : 36);
   doc.moveDown(level === 1 ? 0.7 : 0.35);
   doc
     .font("Helvetica-Bold")
@@ -34,7 +47,7 @@ function paragraph(doc: Doc, text: string) {
 function bullets(doc: Doc, items: string[]) {
   doc.font("Helvetica").fontSize(10.5).fillColor("#334155");
   for (const item of items) {
-    if (doc.y > doc.page.height - 55) doc.addPage();
+    ensureSpace(doc, 28);
     doc.text(`•  ${item}`, { indent: 10, lineGap: 3 });
   }
   doc.moveDown(0.35);
@@ -82,17 +95,12 @@ function drawCover(doc: Doc) {
 
 function footer(doc: Doc) {
   const range = doc.bufferedPageRange();
+  const label = `Finband · Guía de uso · ${new Date().toLocaleDateString("es-ES")}`;
   for (let i = range.start; i < range.start + range.count; i++) {
     doc.switchToPage(i);
     if (i === range.start) continue;
-    doc
-      .font("Helvetica")
-      .fontSize(8)
-      .fillColor(MUTED)
-      .text(`Finband · Guía de uso · ${new Date().toLocaleDateString("es-ES")}`, 48, doc.page.height - 28, {
-        align: "center",
-        width: doc.page.width - 96,
-      });
+    doc.font("Helvetica").fontSize(8).fillColor(MUTED);
+    footerText(doc, label, doc.page.height - 28);
   }
 }
 
@@ -165,7 +173,7 @@ async function main() {
     ],
   );
 
-  doc.addPage();
+  ensureSpace(doc, 120);
 
   menuBlock(
     doc,
@@ -238,7 +246,7 @@ async function main() {
     ],
   );
 
-  doc.addPage();
+  ensureSpace(doc, 80);
 
   heading(doc, "Buenas prácticas de control");
   bullets(doc, [

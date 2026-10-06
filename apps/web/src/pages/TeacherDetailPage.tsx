@@ -8,6 +8,10 @@ import { Label } from "@/components/ui/label";
 import { ApiError, api } from "@/lib/api";
 import { buildQuery, currentYearMonth, formatMoney } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
+import { useSyncPageTitle } from "@/stores/page-title";
+import { DetailPageLayout } from "@/components/layout/DetailPageLayout";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useState } from "react";
 
 export function TeacherDetailPage() {
@@ -110,20 +114,39 @@ export function TeacherDetailPage() {
     }
   }
 
+  const displayName = isNew ? null : `${t?.firstName ?? ""} ${t?.lastName ?? ""}`.trim();
+  useSyncPageTitle(displayName || null);
+
   if (!isNew && teacher.isLoading) {
-    return <p className="text-muted-foreground">Cargando profesor…</p>;
+    return (
+      <div className="page-container space-y-4">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
   }
 
   if (!isNew && teacher.isError) {
-    return <p className="text-destructive">No se pudo cargar el profesor.</p>;
+    return (
+      <Alert variant="destructive" className="page-container">
+        <AlertDescription>No se pudo cargar el profesor.</AlertDescription>
+      </Alert>
+    );
   }
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">
-        {isNew ? "Nuevo profesor" : `${t?.firstName ?? ""} ${t?.lastName ?? ""}`}
-      </h1>
-      <form key={isNew ? "new" : id} onSubmit={onSubmit} className="space-y-4">
+    <DetailPageLayout
+      backTo="/profesores"
+      title={isNew ? "Nuevo profesor" : displayName || "Profesor"}
+      footerActions={
+        isAdmin ? (
+          <Button type="submit" form="teacher-form" disabled={save.isPending} className="w-full md:w-auto">
+            Guardar
+          </Button>
+        ) : undefined
+      }
+    >
+      <form id="teacher-form" key={isNew ? "new" : id} onSubmit={onSubmit} className="space-y-4">
         <Card>
           <CardHeader>
             <CardTitle>Datos personales y económicos</CardTitle>
@@ -213,13 +236,12 @@ export function TeacherDetailPage() {
             </CardContent>
           </Card>
         ) : null}
-        {saveError ? <p className="text-sm text-destructive">{saveError}</p> : null}
-        {isAdmin ? (
-          <Button type="submit" disabled={save.isPending}>
-            Guardar
-          </Button>
+        {saveError ? (
+          <Alert variant="destructive">
+            <AlertDescription>{saveError}</AlertDescription>
+          </Alert>
         ) : null}
       </form>
-    </div>
+    </DetailPageLayout>
   );
 }

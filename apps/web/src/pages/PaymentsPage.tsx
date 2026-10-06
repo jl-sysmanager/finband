@@ -6,6 +6,8 @@ import { MonthSelect } from "@/components/form/MonthSelect";
 import { FilterField } from "@/components/list/FilterField";
 import { ListToolbar } from "@/components/list/ListToolbar";
 import { PageHeader } from "@/components/list/PageHeader";
+import { SegmentedControl } from "@/components/layout/SegmentedControl";
+import { feeStatusBadge } from "@/components/ui/badge";
 import {
   DataTable,
   DataTableHead,
@@ -179,20 +181,14 @@ export function PaymentsPage() {
     setPayAmount(pending > 0 ? String(pending) : "");
   }
 
-  function feeBadgeClass(status: keyof typeof FEE_STATUS_LABELS) {
-    if (status === "PAID") return "bg-income/15 text-income";
-    if (status === "PARTIAL") return "bg-muted text-foreground";
-    return "border border-border bg-transparent";
-  }
-
   return (
-    <div className="space-y-4">
+    <div className="page-container space-y-4">
       <PageHeader
         title="Control de pagos"
         description="Cobros de alumnos y liquidaciones a profesores"
       />
 
-      <Card>
+      <Card className="overflow-hidden">
         <ListToolbar search={search} onSearchChange={setSearch} searchPlaceholder="Buscar por nombre…">
           <FilterField label="Mes desde">
             <MonthSelect value={monthFrom} onChange={setMonthFrom} />
@@ -229,21 +225,15 @@ export function PaymentsPage() {
           )}
         </ListToolbar>
 
-        <div className="flex gap-2 border-b border-border px-6 pb-0 pt-2">
-          <Button
-            size="sm"
-            variant={section === "students" ? "default" : "ghost"}
-            onClick={() => setSection("students")}
-          >
-            Cobros de alumnos
-          </Button>
-          <Button
-            size="sm"
-            variant={section === "teachers" ? "default" : "ghost"}
-            onClick={() => setSection("teachers")}
-          >
-            Pagos a profesores
-          </Button>
+        <div className="border-b border-border px-4 py-3">
+          <SegmentedControl
+            value={section}
+            onChange={setSection}
+            options={[
+              { value: "students", label: "Cobros de alumnos" },
+              { value: "teachers", label: "Pagos a profesores" },
+            ]}
+          />
         </div>
 
         {section === "students" ? (
@@ -347,7 +337,7 @@ export function PaymentsPage() {
                       <DataTableTd>{formatMoney(f.amountPaid)}</DataTableTd>
                       <DataTableTd>{formatMoney(pending)}</DataTableTd>
                       <DataTableTd>
-                        <Badge className={feeBadgeClass(f.status)}>
+                        <Badge variant={feeStatusBadge(f.status)}>
                           {FEE_STATUS_LABELS[f.status]}
                         </Badge>
                       </DataTableTd>
@@ -490,13 +480,7 @@ export function PaymentsPage() {
                     <DataTableTd>{formatMoney(p.amount)}</DataTableTd>
                     <DataTableTd>{formatMoney(p.amountPaid)}</DataTableTd>
                     <DataTableTd>
-                      <Badge
-                        className={
-                          p.status === "PAID"
-                            ? "bg-income/15 text-income"
-                            : "border border-border bg-transparent"
-                        }
-                      >
+                      <Badge variant={feeStatusBadge(p.status)}>
                         {PAYOUT_STATUS_LABELS[p.status] ?? p.status}
                       </Badge>
                       {p.paidAt ? (
