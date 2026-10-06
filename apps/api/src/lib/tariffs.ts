@@ -100,6 +100,53 @@ export async function calculateStudentMonthlyFee(studentId: string): Promise<{
   return { baseAmount, discountAmount, totalAmount, lineItems };
 }
 
+async function upsertStudentFeeForMonth(
+  studentId: string,
+  yearMonth: string,
+  calc: Awaited<ReturnType<typeof calculateStudentMonthlyFee>>,
+) {
+  const [y, m] = yearMonth.split("-").map(Number);
+  const dueDate = new Date(y!, m!, 5);
+  await prisma.studentFee.upsert({
+    where: {
+      studentId_yearMonth: { studentId, yearMonth },
+    },
+    create: {
+      studentId,
+      yearMonth,
+      baseAmount: calc.baseAmount,
+      discountAmount: calc.discountAmount,
+      totalAmount: calc.totalAmount,
+      lineItems: JSON.stringify(calc.lineItems),
+      dueDate,
+      status: "PENDING",
+    },
+    update: {
+      baseAmount: calc.baseAmount,
+      discountAmount: calc.discountAmount,
+      totalAmount: calc.totalAmount,
+      lineItems: JSON.stringify(calc.lineItems),
+    },
+  });
+}
+
+export async function generateFeeForStudent(
+  studentId: string,
+  yearMonth: string,
+): Promise<{ totalAmount: number; yearMonth: string }> {
+  const student = await prisma.student.findFirst({
+    where: { id: studentId, deletedAt: null },
+  });
+  if (!student) throw new Error("Alumno no encontrado");
+
+  const calc = await calculateStudentMonthlyFee(studentId);
+  if (calc.totalAmount <= 0) {
+    return { totalAmount: 0, yearMonth };
+  }
+  await upsertStudentFeeForMonth(studentId, yearMonth, calc);
+  return { totalAmount: calc.totalAmount, yearMonth };
+}
+
 export async function generateFeesForMonth(yearMonth: string): Promise<number> {
   const students = await prisma.student.findMany({
     where: { deletedAt: null, status: "ACTIVE" },
@@ -109,31 +156,7 @@ export async function generateFeesForMonth(yearMonth: string): Promise<number> {
   for (const student of students) {
     const calc = await calculateStudentMonthlyFee(student.id);
     if (calc.totalAmount <= 0) continue;
-
-    const [y, m] = yearMonth.split("-").map(Number);
-    const dueDate = new Date(y!, m!, 5);
-
-    await prisma.studentFee.upsert({
-      where: {
-        studentId_yearMonth: { studentId: student.id, yearMonth },
-      },
-      create: {
-        studentId: student.id,
-        yearMonth,
-        baseAmount: calc.baseAmount,
-        discountAmount: calc.discountAmount,
-        totalAmount: calc.totalAmount,
-        lineItems: JSON.stringify(calc.lineItems),
-        dueDate,
-        status: "PENDING",
-      },
-      update: {
-        baseAmount: calc.baseAmount,
-        discountAmount: calc.discountAmount,
-        totalAmount: calc.totalAmount,
-        lineItems: JSON.stringify(calc.lineItems),
-      },
-    });
+    await upsertStudentFeeForMonth(student.id, yearMonth, calc);
     created++;
   }
   return created;

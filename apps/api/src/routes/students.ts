@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { studentSchema, studentDiscountSchema } from "@finband/shared";
-import { calculateStudentMonthlyFee } from "../lib/tariffs.js";
+import { generateMonthSchema, studentDiscountSchema, studentSchema } from "@finband/shared";
+import { calculateStudentMonthlyFee, generateFeeForStudent } from "../lib/tariffs.js";
 import { prisma } from "../lib/prisma.js";
 
 export async function studentRoutes(app: FastifyInstance) {
@@ -123,6 +123,19 @@ export async function studentRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     try {
       return await calculateStudentMonthlyFee(id);
+    } catch {
+      return reply.status(404).send({ error: "Alumno no encontrado" });
+    }
+  });
+
+  app.post("/:id/generate-fee", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parsed = generateMonthSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
+    }
+    try {
+      return await generateFeeForStudent(id, parsed.data.yearMonth);
     } catch {
       return reply.status(404).send({ error: "Alumno no encontrado" });
     }

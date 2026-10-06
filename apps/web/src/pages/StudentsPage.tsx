@@ -1,4 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus, Receipt, Trash2, X } from "lucide-react";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { StudentFeeGeneratePanel } from "@/components/fees/StudentFeeGeneratePanel";
 import { GraduationCap, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -14,6 +18,7 @@ import {
 } from "@/components/list/DataTable";
 import { ListToolbar } from "@/components/list/ListToolbar";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
 import { buildQuery } from "@/lib/utils";
@@ -31,6 +36,7 @@ type StudentRow = {
 
 export function StudentsPage() {
   const [search, setSearch] = useState("");
+  const [feeStudent, setFeeStudent] = useState<StudentRow | null>(null);
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
@@ -48,6 +54,41 @@ export function StudentsPage() {
   });
 
   return (
+    <div className="space-y-4">
+      <PageHeader
+        title="Alumnos"
+        description={`${q.data?.total ?? 0} registrados`}
+        actions={
+          isAdmin ? (
+            <Button asChild>
+              <Link to="/alumnos/nuevo">
+                <Plus className="h-4 w-4" /> Nuevo alumno
+              </Link>
+            </Button>
+          ) : null
+        }
+      />
+
+      {feeStudent ? (
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between gap-2">
+            <CardTitle className="text-base">
+              Cuota — {feeStudent.lastName}, {feeStudent.firstName}
+            </CardTitle>
+            <Button type="button" size="icon" variant="ghost" onClick={() => setFeeStudent(null)}>
+              <X className="h-4 w-4" />
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <StudentFeeGeneratePanel
+              studentId={feeStudent.id}
+              onGenerated={() => setFeeStudent(null)}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card>
     <ListPageLayout
       title="Alumnos"
       description={`${q.data?.total ?? 0} registrados`}
@@ -91,9 +132,15 @@ export function StudentsPage() {
               <DataTableTh>Nivel</DataTableTh>
               <DataTableTh>Profesor</DataTableTh>
               <DataTableTh>Estado</DataTableTh>
-              <DataTableTh className="w-24" />
+              <DataTableTh className="w-28" />
             </DataTableHead>
             <tbody>
+              {q.data?.items.map((s) => (
+                <DataTableRow
+                  key={s.id}
+                  className="cursor-pointer"
+                  onClick={() => navigate(`/alumnos/${s.id}`)}
+                >
               {data.items.map((s) => (
                 <DataTableRow key={s.id}>
                   <DataTableTd className="font-medium">
@@ -111,6 +158,30 @@ export function StudentsPage() {
                       {s.status === "ACTIVE" ? "Activo" : "Inactivo"}
                     </Badge>
                   </DataTableTd>
+                  <DataTableTd className="text-right" onClick={(e) => e.stopPropagation()}>
+                    {isAdmin ? (
+                      <>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          aria-label="Generar cuota"
+                          onClick={() => setFeeStudent(s)}
+                        >
+                          <Receipt className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          aria-label="Baja alumno"
+                          onClick={() => {
+                            if (confirm("¿Dar de baja a este alumno?")) remove.mutate(s.id);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4 text-expense" />
+                        </Button>
+                      </>
                   <DataTableActions>
                     <Button
                       size="icon"

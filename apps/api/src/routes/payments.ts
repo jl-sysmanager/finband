@@ -182,42 +182,56 @@ export async function paymentRoutes(app: FastifyInstance) {
     });
   });
 
+  async function upsertTeacherPayout(teacherId: string, yearMonth: string) {
+    const calc = await calculateTeacherPayout(teacherId, yearMonth);
+    if (calc.amount <= 0) return false;
+    const existing = await prisma.teacherPayout.findUnique({
+      where: { teacherId_yearMonth: { teacherId, yearMonth } },
+    });
+    const amountPaid = existing ? Math.min(existing.amountPaid, calc.amount) : 0;
+    await prisma.teacherPayout.upsert({
+      where: { teacherId_yearMonth: { teacherId, yearMonth } },
+      create: {
+        teacherId,
+        yearMonth,
+        baseAmount: calc.baseAmount,
+        transportAmount: calc.transportAmount,
+        workDays: calc.workDays,
+        amount: calc.amount,
+        amountPaid: 0,
+        status: payoutStatus(calc.amount, 0),
+      },
+      update: {
+        baseAmount: calc.baseAmount,
+        transportAmount: calc.transportAmount,
+        workDays: calc.workDays,
+        amount: calc.amount,
+        amountPaid,
+        status: payoutStatus(calc.amount, amountPaid),
+      },
+    });
+    return true;
+  }
+
   app.post("/teacher-payouts/generate", async (request, reply) => {
-    const { yearMonth } = request.body as { yearMonth?: string };
+    const { yearMonth, teacherId } = request.body as { yearMonth?: string; teacherId?: string };
     if (!yearMonth || !/^\d{4}-\d{2}$/.test(yearMonth)) {
       return reply.status(400).send({ error: "yearMonth inválido (YYYY-MM)" });
+    }
+    if (teacherId) {
+      const teacher = await prisma.teacher.findFirst({
+        where: { id: teacherId, deletedAt: null },
+      });
+      if (!teacher) return reply.status(404).send({ error: "Profesor no encontrado" });
+      const calc = await calculateTeacherPayout(teacherId, yearMonth);
+      if (calc.amount <= 0) return { generated: 0, yearMonth, amount: 0 };
+      await upsertTeacherPayout(teacherId, yearMonth);
+      return { generated: 1, yearMonth, amount: calc.amount };
     }
     const teachers = await prisma.teacher.findMany({ where: { deletedAt: null } });
     let count = 0;
     for (const t of teachers) {
-      const calc = await calculateTeacherPayout(t.id, yearMonth);
-      if (calc.amount <= 0) continue;
-      const existing = await prisma.teacherPayout.findUnique({
-        where: { teacherId_yearMonth: { teacherId: t.id, yearMonth } },
-      });
-      const amountPaid = existing ? Math.min(existing.amountPaid, calc.amount) : 0;
-      await prisma.teacherPayout.upsert({
-        where: { teacherId_yearMonth: { teacherId: t.id, yearMonth } },
-        create: {
-          teacherId: t.id,
-          yearMonth,
-          baseAmount: calc.baseAmount,
-          transportAmount: calc.transportAmount,
-          workDays: calc.workDays,
-          amount: calc.amount,
-          amountPaid: 0,
-          status: payoutStatus(calc.amount, 0),
-        },
-        update: {
-          baseAmount: calc.baseAmount,
-          transportAmount: calc.transportAmount,
-          workDays: calc.workDays,
-          amount: calc.amount,
-          amountPaid,
-          status: payoutStatus(calc.amount, amountPaid),
-        },
-      });
-      count++;
+      if (await upsertTeacherPayout(t.id, yearMonth)) count++;
     }
     return { generated: count, yearMonth };
   });
