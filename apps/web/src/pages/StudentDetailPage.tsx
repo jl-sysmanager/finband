@@ -1,12 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
+import { DetailPageLayout } from "@/components/layout/DetailPageLayout";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError, api } from "@/lib/api";
-import { formatDate, formatMoney } from "@/lib/utils";
+import { formatMoney } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
+import { useSyncPageTitle } from "@/stores/page-title";
 import { FEE_STATUS_LABELS } from "@finband/shared";
 import { StudentFeeGeneratePanel } from "@/components/fees/StudentFeeGeneratePanel";
 import { Trash2 } from "lucide-react";
@@ -18,7 +24,7 @@ export function StudentDetailPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
-  const [tab, setTab] = useState<"personal" | "academico" | "economico">("personal");
+  const [tab, setTab] = useState("personal");
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const student = useQuery({
@@ -76,6 +82,9 @@ export function StudentDetailPage() {
     discounts?: Array<{ id: string; name: string; type: string; value: number }>;
   };
 
+  const displayName = isNew ? null : `${s?.firstName ?? ""} ${s?.lastName ?? ""}`.trim();
+  useSyncPageTitle(displayName || null);
+
   function fieldDefault(name: string) {
     const raw = s?.[name as keyof typeof s];
     if (name === "birthDate" && typeof raw === "string") return raw.slice(0, 10);
@@ -86,12 +95,7 @@ export function StudentDetailPage() {
     return (
       <div className="space-y-1">
         <Label>{label}</Label>
-        <Input
-          name={name}
-          type={type}
-          defaultValue={fieldDefault(name)}
-          disabled={!isAdmin}
-        />
+        <Input name={name} type={type} defaultValue={fieldDefault(name)} disabled={!isAdmin} />
       </div>
     );
   }
@@ -115,47 +119,67 @@ export function StudentDetailPage() {
   }
 
   if (!isNew && student.isLoading) {
-    return <p className="text-muted-foreground">Cargando alumno…</p>;
+    return (
+      <div className="page-container space-y-4">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
   }
 
   if (!isNew && student.isError) {
-    return <p className="text-destructive">No se pudo cargar el alumno.</p>;
+    return (
+      <Alert variant="destructive" className="page-container">
+        <AlertDescription>No se pudo cargar el alumno.</AlertDescription>
+      </Alert>
+    );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">
-          {isNew ? "Nuevo alumno" : `${s?.firstName ?? ""} ${s?.lastName ?? ""}`}
-        </h1>
-        {!isNew && isAdmin ? (
-          <Button variant="destructive" onClick={() => remove.mutate()}>
+    <DetailPageLayout
+      backTo="/alumnos"
+      title={isNew ? "Nuevo alumno" : displayName || "Alumno"}
+      subtitle={
+        !isNew && s?.status ? (
+          <Badge variant={s.status === "ACTIVE" ? "success" : "secondary"}>
+            {s.status === "ACTIVE" ? "Activo" : "Inactivo"}
+          </Badge>
+        ) : undefined
+      }
+      headerActions={
+        !isNew && isAdmin ? (
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => {
+              if (confirm("¿Dar de baja a este alumno?")) remove.mutate();
+            }}
+          >
             Baja lógica
           </Button>
-        ) : null}
-      </div>
-
-      <div className="flex gap-2">
-        {(["personal", "academico", "economico"] as const).map((t) => (
-          <Button
-            key={t}
-            size="sm"
-            variant={tab === t ? "default" : "outline"}
-            onClick={() => setTab(t)}
-          >
-            {t === "personal" ? "Personal" : t === "academico" ? "Académico" : "Económico"}
+        ) : undefined
+      }
+      footerActions={
+        isAdmin ? (
+          <Button type="submit" form="student-form" disabled={save.isPending} className="w-full md:w-auto">
+            Guardar
           </Button>
-        ))}
-      </div>
-
-      <form key={isNew ? "new" : id} onSubmit={onSubmit}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Ficha del alumno</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-2">
-            {tab === "personal" ? (
-              <>
+        ) : undefined
+      }
+    >
+      <form id="student-form" key={isNew ? "new" : id} onSubmit={onSubmit}>
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList>
+            <TabsTrigger value="personal">Personal</TabsTrigger>
+            <TabsTrigger value="academico">Académico</TabsTrigger>
+            <TabsTrigger value="economico">Económico</TabsTrigger>
+          </TabsList>
+          <TabsContent value="personal">
+            <Card>
+              <CardHeader>
+                <CardTitle>Datos personales</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2">
                 {field("firstName", "Nombre")}
                 {field("lastName", "Apellidos")}
                 {field("birthDate", "Fecha de nacimiento", "date")}
@@ -167,10 +191,15 @@ export function StudentDetailPage() {
                   <Label>Observaciones</Label>
                   <Input name="notes" defaultValue={s?.notes ?? ""} disabled={!isAdmin} />
                 </div>
-              </>
-            ) : null}
-            {tab === "academico" ? (
-              <>
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="academico">
+            <Card>
+              <CardHeader>
+                <CardTitle>Académico</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2">
                 {field("mainInstrument", "Instrumento principal")}
                 {field("level", "Nivel")}
                 <div className="space-y-1">
@@ -202,10 +231,15 @@ export function StudentDetailPage() {
                     </ul>
                   </div>
                 ) : null}
-              </>
-            ) : null}
-            {tab === "economico" ? (
-              <>
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="economico">
+            <Card>
+              <CardHeader>
+                <CardTitle>Económico</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2">
                 {field("monthlyFee", "Cuota mensual fija (opcional)", "number")}
                 {!isNew && isAdmin && id ? (
                   <div className="md:col-span-2">
@@ -229,33 +263,38 @@ export function StudentDetailPage() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-left text-muted-foreground">
-                            <th>Mes</th>
-                            <th>Total</th>
-                            <th>Pagado</th>
-                            <th>Estado</th>
+                            <th className="pb-2">Mes</th>
+                            <th className="pb-2">Total</th>
+                            <th className="pb-2">Pagado</th>
+                            <th className="pb-2">Estado</th>
                             {isAdmin ? <th className="w-10" /> : null}
                           </tr>
                         </thead>
                         <tbody>
                           {(s?.fees ?? []).map((f) => (
-                            <tr key={f.id}>
-                              <td className="py-1">{f.yearMonth}</td>
+                            <tr key={f.id} className="border-t border-border/60">
+                              <td className="py-2">{f.yearMonth}</td>
                               <td>{formatMoney(f.totalAmount)}</td>
                               <td>{formatMoney(f.amountPaid)}</td>
                               <td>{FEE_STATUS_LABELS[f.status]}</td>
                               {isAdmin ? (
-                                <td className="py-1 text-right">
+                                <td className="text-right">
                                   <Button
+                                    type="button"
                                     size="icon"
                                     variant="ghost"
                                     aria-label="Eliminar cuota"
                                     onClick={() => {
-                                      if (confirm("¿Eliminar esta cuota? Se borrarán también los cobros asociados.")) {
+                                      if (
+                                        confirm(
+                                          "¿Eliminar esta cuota? Se borrarán también los cobros asociados.",
+                                        )
+                                      ) {
                                         deleteFee.mutate(f.id);
                                       }
                                     }}
                                   >
-                                    <Trash2 className="h-4 w-4 text-expense" />
+                                    <Trash2 className="h-4 w-4 text-destructive" />
                                   </Button>
                                 </td>
                               ) : null}
@@ -266,22 +305,16 @@ export function StudentDetailPage() {
                     </div>
                   </>
                 ) : null}
-              </>
-            ) : null}
-          </CardContent>
-        </Card>
-        {saveError ? <p className="mt-4 text-sm text-destructive">{saveError}</p> : null}
-        {isAdmin ? (
-          <div className="mt-4 flex justify-end">
-            <Button type="submit" disabled={save.isPending}>
-              Guardar
-            </Button>
-          </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+        {saveError ? (
+          <Alert variant="destructive" className="mt-4">
+            <AlertDescription>{saveError}</AlertDescription>
+          </Alert>
         ) : null}
       </form>
-      {!isNew && s?.birthDate ? (
-        <p className="text-xs text-muted-foreground">Nacimiento: {formatDate(s.birthDate)}</p>
-      ) : null}
-    </div>
+    </DetailPageLayout>
   );
 }

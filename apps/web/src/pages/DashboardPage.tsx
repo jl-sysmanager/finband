@@ -1,4 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
+import { GraduationCap, Receipt, Wallet } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -9,7 +11,18 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { PageHeader } from "@/components/list/PageHeader";
+import { StatCard } from "@/components/layout/StatCard";
+import {
+  DataTable,
+  DataTableHead,
+  DataTableRow,
+  DataTableTd,
+  DataTableTh,
+} from "@/components/list/DataTable";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/utils";
 
@@ -62,46 +75,68 @@ export function DashboardPage() {
   });
 
   const s = summary.data;
-
-  const kpis = [
-    { label: "Alumnos", value: s?.students ?? "—" },
-    { label: "Profesores", value: s?.teachers ?? "—" },
-    { label: "Clases activas", value: s?.classes ?? "—" },
-    { label: "Ingresos del mes", value: formatMoney(s?.monthlyIncome ?? 0), tone: "income" },
-    { label: "Gastos del mes", value: formatMoney(s?.monthlyExpenses ?? 0), tone: "expense" },
-    { label: "Balance mensual", value: formatMoney(s?.monthlyBalance ?? 0) },
-    { label: "Cobros pendientes", value: formatMoney(s?.pendingCollections ?? 0) },
-    { label: "Pagos profesores pend.", value: formatMoney(s?.pendingTeacherPay ?? 0) },
-  ];
+  const loading = summary.isLoading;
 
   return (
-    <div className="space-y-6">
+    <div className="page-container">
+      <PageHeader
+        title="Dashboard"
+        description="Resumen del centro educativo"
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/pagos">
+                <Wallet className="h-4 w-4" /> Registrar cobro
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/informes">
+                <Receipt className="h-4 w-4" /> Impagos
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/tarifas">
+                <GraduationCap className="h-4 w-4" /> Cuotas
+              </Link>
+            </Button>
+          </div>
+        }
+      />
+
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Resumen del centro educativo</p>
+        <h2 className="mb-3 text-sm font-medium text-muted-foreground">Centro</h2>
+        <div className="grid gap-4 sm:grid-cols-3">
+          {loading ? (
+            <>
+              <Skeleton className="h-24" />
+              <Skeleton className="h-24" />
+              <Skeleton className="h-24" />
+            </>
+          ) : (
+            <>
+              <StatCard label="Alumnos" value={s?.students ?? "—"} />
+              <StatCard label="Profesores" value={s?.teachers ?? "—"} />
+              <StatCard label="Clases activas" value={s?.classes ?? "—"} />
+            </>
+          )}
+        </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {kpis.map((k) => (
-          <Card key={k.label}>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-xs font-medium text-muted-foreground">{k.label}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p
-                className={
-                  k.tone === "income"
-                    ? "text-2xl font-semibold text-income"
-                    : k.tone === "expense"
-                      ? "text-2xl font-semibold text-expense"
-                      : "text-2xl font-semibold"
-                }
-              >
-                {k.value}
-              </p>
-            </CardContent>
-          </Card>
-        ))}
+      <div>
+        <h2 className="mb-3 text-sm font-medium text-muted-foreground">Finanzas del mes</h2>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          {loading ? (
+            Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-24" />)
+          ) : (
+            <>
+              <StatCard label="Ingresos" value={formatMoney(s?.monthlyIncome ?? 0)} tone="income" />
+              <StatCard label="Gastos" value={formatMoney(s?.monthlyExpenses ?? 0)} tone="expense" />
+              <StatCard label="Balance" value={formatMoney(s?.monthlyBalance ?? 0)} />
+              <StatCard label="Cobros pendientes" value={formatMoney(s?.pendingCollections ?? 0)} />
+              <StatCard label="Pagos profesores pend." value={formatMoney(s?.pendingTeacherPay ?? 0)} />
+            </>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-3">
@@ -110,17 +145,21 @@ export function DashboardPage() {
             <CardTitle>Ingresos y gastos (12 meses)</CardTitle>
           </CardHeader>
           <CardContent className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chart.data ?? []}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v: number) => formatMoney(v)} />
-                <Legend />
-                <Bar dataKey="income" name="Ingresos" fill="hsl(142 71% 45%)" radius={4} />
-                <Bar dataKey="expenses" name="Gastos" fill="hsl(0 72% 51%)" radius={4} />
-              </BarChart>
-            </ResponsiveContainer>
+            {chart.isLoading ? (
+              <Skeleton className="h-full w-full" />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chart.data ?? []}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.4} />
+                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(v: number) => formatMoney(v)} />
+                  <Legend />
+                  <Bar dataKey="income" name="Ingresos" fill="hsl(142 71% 45%)" radius={4} />
+                  <Bar dataKey="expenses" name="Gastos" fill="hsl(0 72% 51%)" radius={4} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
 
@@ -129,7 +168,9 @@ export function DashboardPage() {
             <CardTitle>Próximos vencimientos</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {(due.data ?? []).length === 0 ? (
+            {due.isLoading ? (
+              <Skeleton className="h-20" />
+            ) : (due.data ?? []).length === 0 ? (
               <p className="text-sm text-muted-foreground">Sin vencimientos pendientes</p>
             ) : (
               due.data?.map((d) => (
@@ -150,32 +191,30 @@ export function DashboardPage() {
         <CardHeader>
           <CardTitle>Últimos movimientos económicos</CardTitle>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-foreground">
-                <th className="pb-2 pr-4 font-medium">Fecha</th>
-                <th className="pb-2 pr-4 font-medium">Concepto</th>
-                <th className="pb-2 pr-4 font-medium">Categoría</th>
-                <th className="pb-2 font-medium text-right">Importe</th>
-              </tr>
-            </thead>
+        <CardContent>
+          <DataTable>
+            <DataTableHead>
+              <DataTableTh>Fecha</DataTableTh>
+              <DataTableTh>Concepto</DataTableTh>
+              <DataTableTh>Categoría</DataTableTh>
+              <DataTableTh className="text-right">Importe</DataTableTh>
+            </DataTableHead>
             <tbody>
               {(movements.data ?? []).map((m, i) => (
-                <tr key={i} className="border-b border-border/60">
-                  <td className="py-2 pr-4">{formatDate(m.date)}</td>
-                  <td className="py-2 pr-4">{m.concept}</td>
-                  <td className="py-2 pr-4">{m.category}</td>
-                  <td
-                    className={`py-2 text-right font-medium ${m.type === "income" ? "text-income" : "text-expense"}`}
+                <DataTableRow key={i}>
+                  <DataTableTd>{formatDate(m.date)}</DataTableTd>
+                  <DataTableTd>{m.concept}</DataTableTd>
+                  <DataTableTd>{m.category}</DataTableTd>
+                  <DataTableTd
+                    className={`text-right font-medium ${m.type === "income" ? "text-income" : "text-expense"}`}
                   >
                     {m.type === "income" ? "+" : "-"}
                     {formatMoney(m.amount)}
-                  </td>
-                </tr>
+                  </DataTableTd>
+                </DataTableRow>
               ))}
             </tbody>
-          </table>
+          </DataTable>
         </CardContent>
       </Card>
     </div>

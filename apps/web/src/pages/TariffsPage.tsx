@@ -90,6 +90,8 @@ export function TariffsPage() {
         title="Tarifas"
         description={`${filteredRules.length} reglas · La generación de cuotas se hace desde cada alumno`}
       />
+    <div className="page-container space-y-4">
+      <PageHeader title="Tarifas" description={`${filteredRules.length} reglas activas`} />
 
       <Card>
         <ListToolbar

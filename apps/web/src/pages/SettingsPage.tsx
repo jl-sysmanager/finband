@@ -134,7 +134,7 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="page-container space-y-6">
       <PageHeader title="Configuración del centro" description="Datos del centro y usuarios de acceso" />
 
       <form key={`school-${school.dataUpdatedAt}`} onSubmit={onSchoolSubmit}>

@@ -10,13 +10,23 @@ import { buildQuery, formatMoney } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 import { PageHeader } from "@/components/list/PageHeader";
 import { ListToolbar } from "@/components/list/ListToolbar";
+import { Pencil, Plus, Trash2, Users } from "lucide-react";
+import { useState } from "react";
+import { ListPageLayout } from "@/components/layout/ListPageLayout";
+import { QueryState } from "@/components/layout/QueryState";
 import {
   DataTable,
+  DataTableActions,
   DataTableHead,
   DataTableRow,
   DataTableTd,
   DataTableTh,
 } from "@/components/list/DataTable";
+import { ListToolbar } from "@/components/list/ListToolbar";
+import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api";
+import { buildQuery, formatMoney } from "@/lib/utils";
+import { useAuth } from "@/stores/auth";
 
 type TeacherRow = {
   id: string;
@@ -80,12 +90,34 @@ export function TeachersPage() {
       ) : null}
 
       <Card>
+    <ListPageLayout
+      title="Profesores"
+      description={`${q.data?.length ?? 0} en plantilla`}
+      actions={
+        isAdmin ? (
+          <Button asChild>
+            <Link to="/profesores/nuevo">
+              <Plus className="h-4 w-4" /> Nuevo profesor
+            </Link>
+          </Button>
+        ) : null
+      }
+      toolbar={
         <ListToolbar
           search={search}
           onSearchChange={setSearch}
           searchPlaceholder="Buscar por nombre o especialidad…"
         />
-        <CardContent className="pt-4">
+      }
+    >
+      <QueryState
+        query={q}
+        empty={!q.data?.length}
+        emptyIcon={Users}
+        emptyTitle="No hay profesores"
+        emptyDescription="Crea un profesor para asignar clases."
+      >
+        {(data) => (
           <DataTable>
             <DataTableHead>
               <DataTableTh>Nombre</DataTableTh>
@@ -101,6 +133,8 @@ export function TeachersPage() {
                   className="cursor-pointer"
                   onClick={() => navigate(`/profesores/${t.id}`)}
                 >
+              {data.map((t) => (
+                <DataTableRow key={t.id}>
                   <DataTableTd className="font-medium">
                     {t.lastName}, {t.firstName}
                   </DataTableTd>
@@ -131,14 +165,34 @@ export function TeachersPage() {
                           <Trash2 className="h-4 w-4 text-expense" />
                         </Button>
                       </>
+                  <DataTableActions>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      aria-label="Editar profesor"
+                      onClick={() => navigate(`/profesores/${t.id}`)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    {isAdmin ? (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        aria-label="Eliminar profesor"
+                        onClick={() => {
+                          if (confirm("¿Eliminar este profesor?")) remove.mutate(t.id);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
                     ) : null}
-                  </DataTableTd>
+                  </DataTableActions>
                 </DataTableRow>
               ))}
             </tbody>
           </DataTable>
-        </CardContent>
-      </Card>
-    </div>
+        )}
+      </QueryState>
+    </ListPageLayout>
   );
 }

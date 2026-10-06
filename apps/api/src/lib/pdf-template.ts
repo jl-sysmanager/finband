@@ -4,6 +4,9 @@ import { prisma } from "./prisma.js";
 const ACCENT = "#2563eb";
 const MUTED = "#64748b";
 const BORDER = "#e2e8f0";
+const PAGE_MARGIN = 48;
+/** Zona reservada al pie (numeración + marca) */
+const FOOTER_ZONE = 44;
 
 export function formatEuro(n: number) {
   return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(n);
@@ -23,7 +26,19 @@ export async function getSchoolBranding() {
 type PdfDoc = InstanceType<typeof PDFDocument>;
 
 export function createPdf(): PdfDoc {
-  return new PDFDocument({ size: "A4", margin: 48, bufferPages: true });
+  return new PDFDocument({ size: "A4", margin: PAGE_MARGIN, bufferPages: true });
+}
+
+/** Evita saltos de página si queda poco espacio útil (sin contar el pie). */
+export function ensurePageSpace(doc: PdfDoc, neededHeight: number) {
+  const limit = doc.page.height - PAGE_MARGIN - FOOTER_ZONE;
+  if (doc.y + neededHeight > limit) doc.addPage();
+}
+
+function footerText(doc: PdfDoc, text: string, y: number) {
+  const w = doc.widthOfString(text);
+  const x = Math.max(PAGE_MARGIN, (doc.page.width - w) / 2);
+  doc.text(text, x, y, { lineBreak: false });
 }
 
 export function pdfToBuffer(doc: PdfDoc): Promise<Buffer> {
@@ -126,10 +141,11 @@ export function drawTable(
     .stroke();
 
   doc.font("Helvetica").fontSize(10).fillColor("#334155");
+  const pageBreakY = doc.page.height - PAGE_MARGIN - FOOTER_ZONE;
   for (const row of rows) {
-    if (y > doc.page.height - 80) {
+    if (y + 22 > pageBreakY) {
       doc.addPage();
-      y = 48;
+      y = PAGE_MARGIN;
     }
     row.forEach((cell, i) => {
       doc.text(cell, 48 + i * colWidth, y, {
@@ -168,22 +184,14 @@ export function drawTotalBar(doc: PdfDoc, label: string, amount: number) {
 
 export function drawFooter(doc: PdfDoc) {
   const range = doc.bufferedPageRange();
-  for (let i = range.start; i < range.start + range.count; i++) {
+  const pageCount = range.count;
+  const generated = `Generado el ${new Date().toLocaleString("es-ES")} · Finband`;
+
+  for (let i = range.start; i < range.start + pageCount; i++) {
     doc.switchToPage(i);
-    doc
-      .font("Helvetica")
-      .fontSize(8)
-      .fillColor(MUTED)
-      .text(
-        `Generado el ${new Date().toLocaleString("es-ES")} · Finband`,
-        48,
-        doc.page.height - 36,
-        { align: "center", width: doc.page.width - 96 },
-      );
-    doc.text(`Página ${i - range.start + 1} de ${range.count}`, 48, doc.page.height - 24, {
-      align: "center",
-      width: doc.page.width - 96,
-    });
+    doc.font("Helvetica").fontSize(8).fillColor(MUTED);
+    footerText(doc, generated, doc.page.height - 36);
+    footerText(doc, `Página ${i - range.start + 1} de ${pageCount}`, doc.page.height - 24);
   }
 }
 

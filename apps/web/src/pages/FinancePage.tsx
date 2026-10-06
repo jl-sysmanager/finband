@@ -19,6 +19,8 @@ import {
 import { ApiError, api } from "@/lib/api";
 import { buildQuery, firstDayOfCurrentMonthISO, formatDate, formatMoney, todayISO } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
 
 type FinanceProps = { mode: "incomes" | "expenses" };
 
@@ -124,7 +126,7 @@ export function FinancePage({ mode }: FinanceProps) {
   const canShowEntryForm = categories.isSuccess;
 
   return (
-    <div className="space-y-4">
+    <div className="page-container space-y-4">
       <PageHeader
         title={isIncome ? "Ingresos" : "Gastos"}
         description={`${filteredEntries.length} movimientos en el periodo`}
@@ -199,7 +201,9 @@ export function FinancePage({ mode }: FinanceProps) {
                   <Input name="notes" defaultValue={editing?.notes ?? ""} />
                 </div>
                 {saveError ? (
-                  <p className="md:col-span-3 text-sm text-destructive">{saveError}</p>
+                  <Alert variant="destructive" className="md:col-span-3">
+                    <AlertDescription>{saveError}</AlertDescription>
+                  </Alert>
                 ) : null}
                 <div className="md:col-span-3 flex gap-2">
                   <Button type="submit" className="w-fit" disabled={save.isPending}>
@@ -224,7 +228,8 @@ export function FinancePage({ mode }: FinanceProps) {
         </Card>
       ) : null}
 
-      <Card>
+      <Separator className="my-2" />
+      <Card className="overflow-hidden">
         <ListToolbar search={search} onSearchChange={setSearch} searchPlaceholder="Buscar concepto o categoría…">
           <FilterField label="Desde">
             <Input type="date" className="h-10" value={from} onChange={(e) => setFrom(e.target.value)} />

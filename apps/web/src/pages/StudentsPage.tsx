@@ -3,15 +3,20 @@ import { Plus, Receipt, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { StudentFeeGeneratePanel } from "@/components/fees/StudentFeeGeneratePanel";
+import { GraduationCap, Pencil, Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { ListPageLayout } from "@/components/layout/ListPageLayout";
+import { QueryState } from "@/components/layout/QueryState";
 import {
   DataTable,
+  DataTableActions,
   DataTableHead,
   DataTableRow,
   DataTableTd,
   DataTableTh,
 } from "@/components/list/DataTable";
 import { ListToolbar } from "@/components/list/ListToolbar";
-import { PageHeader } from "@/components/list/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -84,12 +89,42 @@ export function StudentsPage() {
       ) : null}
 
       <Card>
+    <ListPageLayout
+      title="Alumnos"
+      description={`${q.data?.total ?? 0} registrados`}
+      actions={
+        isAdmin ? (
+          <Button asChild>
+            <Link to="/alumnos/nuevo">
+              <Plus className="h-4 w-4" /> Nuevo alumno
+            </Link>
+          </Button>
+        ) : null
+      }
+      toolbar={
         <ListToolbar
           search={search}
           onSearchChange={setSearch}
           searchPlaceholder="Buscar por nombre o email…"
         />
-        <CardContent className="pt-4">
+      }
+      footer={q.data ? `${q.data.items.length} filas mostradas` : undefined}
+    >
+      <QueryState
+        query={q}
+        empty={!q.data?.items.length}
+        emptyIcon={GraduationCap}
+        emptyTitle="No hay alumnos"
+        emptyDescription="Ajusta la búsqueda o crea un nuevo alumno."
+        emptyAction={
+          isAdmin ? (
+            <Button asChild size="sm">
+              <Link to="/alumnos/nuevo">Nuevo alumno</Link>
+            </Button>
+          ) : undefined
+        }
+      >
+        {(data) => (
           <DataTable>
             <DataTableHead>
               <DataTableTh>Nombre</DataTableTh>
@@ -106,6 +141,8 @@ export function StudentsPage() {
                   className="cursor-pointer"
                   onClick={() => navigate(`/alumnos/${s.id}`)}
                 >
+              {data.items.map((s) => (
+                <DataTableRow key={s.id}>
                   <DataTableTd className="font-medium">
                     {s.lastName}, {s.firstName}
                   </DataTableTd>
@@ -117,7 +154,9 @@ export function StudentsPage() {
                       : "—"}
                   </DataTableTd>
                   <DataTableTd>
-                    <Badge>{s.status === "ACTIVE" ? "Activo" : "Inactivo"}</Badge>
+                    <Badge variant={s.status === "ACTIVE" ? "success" : "secondary"}>
+                      {s.status === "ACTIVE" ? "Activo" : "Inactivo"}
+                    </Badge>
                   </DataTableTd>
                   <DataTableTd className="text-right" onClick={(e) => e.stopPropagation()}>
                     {isAdmin ? (
@@ -143,14 +182,34 @@ export function StudentsPage() {
                           <Trash2 className="h-4 w-4 text-expense" />
                         </Button>
                       </>
+                  <DataTableActions>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      aria-label="Editar alumno"
+                      onClick={() => navigate(`/alumnos/${s.id}`)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    {isAdmin ? (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        aria-label="Baja alumno"
+                        onClick={() => {
+                          if (confirm("¿Dar de baja a este alumno?")) remove.mutate(s.id);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
                     ) : null}
-                  </DataTableTd>
+                  </DataTableActions>
                 </DataTableRow>
               ))}
             </tbody>
           </DataTable>
-        </CardContent>
-      </Card>
-    </div>
+        )}
+      </QueryState>
+    </ListPageLayout>
   );
 }

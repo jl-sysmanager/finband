@@ -12,6 +12,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, api } from "@/lib/api";
 import { useAuth } from "@/stores/auth";
+import { useSyncPageTitle } from "@/stores/page-title";
+import { DetailPageLayout } from "@/components/layout/DetailPageLayout";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function ClassDetailPage() {
   const { id } = useParams();
@@ -107,18 +111,38 @@ export function ClassDetailPage() {
     }
   }
 
+  useSyncPageTitle(isNew ? null : c?.name ?? null);
+
   if (!isNew && cls.isLoading) {
-    return <p className="text-muted-foreground">Cargando clase…</p>;
+    return (
+      <div className="page-container space-y-4">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
   }
 
   if (!isNew && cls.isError) {
-    return <p className="text-destructive">No se pudo cargar la clase.</p>;
+    return (
+      <Alert variant="destructive" className="page-container">
+        <AlertDescription>No se pudo cargar la clase.</AlertDescription>
+      </Alert>
+    );
   }
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">{isNew ? "Nueva clase" : c?.name}</h1>
-      <form key={isNew ? "new" : id} onSubmit={onSubmit} className="space-y-4">
+    <DetailPageLayout
+      backTo="/clases"
+      title={isNew ? "Nueva clase" : c?.name ?? "Clase"}
+      footerActions={
+        isAdmin ? (
+          <Button type="submit" form="class-form" disabled={save.isPending} className="w-full md:w-auto">
+            Guardar
+          </Button>
+        ) : undefined
+      }
+    >
+      <form id="class-form" key={isNew ? "new" : id} onSubmit={onSubmit} className="space-y-4">
         <Card>
           <CardHeader>
             <CardTitle>Configuración de la clase</CardTitle>
@@ -191,11 +215,10 @@ export function ClassDetailPage() {
             </div>
           </CardContent>
         </Card>
-        {saveError ? <p className="text-sm text-destructive">{saveError}</p> : null}
-        {isAdmin ? (
-          <Button type="submit" disabled={save.isPending}>
-            Guardar
-          </Button>
+        {saveError ? (
+          <Alert variant="destructive">
+            <AlertDescription>{saveError}</AlertDescription>
+          </Alert>
         ) : null}
       </form>
 
@@ -251,6 +274,6 @@ export function ClassDetailPage() {
           </CardContent>
         </Card>
       ) : null}
-    </div>
+    </DetailPageLayout>
   );
 }

@@ -15,9 +15,11 @@ import {
 } from "@/components/list/DataTable";
 import { ListToolbar } from "@/components/list/ListToolbar";
 import { PageHeader } from "@/components/list/PageHeader";
+import { SegmentedControl } from "@/components/layout/SegmentedControl";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { addDaysIso, buildQuery, mondayOfWeek, todayISO } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 import { ChevronLeft, ChevronRight, Plus, RotateCcw, Trash2 } from "lucide-react";
@@ -32,6 +34,7 @@ export function ClassesPage() {
 
   const weekStart = useMemo(() => mondayOfWeek(weekAnchor), [weekAnchor]);
   const weekEnd = useMemo(() => addDaysIso(weekStart, 6), [weekStart]);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
 
   const q = useQuery({
     queryKey: ["classes", search],
@@ -69,16 +72,31 @@ export function ClassesPage() {
           reason: "Festivo / libranza",
         }),
       }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["schedule-occurrences"] });
-      qc.invalidateQueries({ queryKey: ["weekly-schedule"] });
+    onSuccess: async () => {
+      setCalendarError(null);
+      await qc.refetchQueries({ queryKey: ["schedule-occurrences", weekStart] });
+    },
+    onError: (err) => {
+      setCalendarError(err instanceof ApiError ? err.message : "No se pudo suspender la sesión");
     },
   });
 
   const restoreSession = useMutation({
-    mutationFn: (cancellationId: string) =>
-      api(`/classes/schedule/cancellations/${cancellationId}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["schedule-occurrences"] }),
+    mutationFn: (occ: ScheduleOccurrence) =>
+      api("/classes/schedule/cancellations/restore", {
+        method: "POST",
+        body: JSON.stringify({
+          scheduleSlotId: occ.scheduleSlotId,
+          sessionDate: occ.sessionDate,
+        }),
+      }),
+    onSuccess: async () => {
+      setCalendarError(null);
+      await qc.refetchQueries({ queryKey: ["schedule-occurrences", weekStart] });
+    },
+    onError: (err) => {
+      setCalendarError(err instanceof ApiError ? err.message : "No se pudo restaurar la sesión");
+    },
   });
 
   const remove = useMutation({
@@ -104,26 +122,20 @@ export function ClassesPage() {
   const suspended = items.filter((o) => o.cancelled);
 
   return (
-    <div className="space-y-4">
+    <div className="page-container space-y-4">
       <PageHeader
         title="Clases"
         description={`${q.data?.length ?? 0} grupos`}
         actions={
-          <>
-            <Button
-              size="sm"
-              variant={view === "list" ? "default" : "outline"}
-              onClick={() => setView("list")}
-            >
-              Listado
-            </Button>
-            <Button
-              size="sm"
-              variant={view === "calendar" ? "default" : "outline"}
-              onClick={() => setView("calendar")}
-            >
-              Calendario
-            </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <SegmentedControl
+              value={view}
+              onChange={setView}
+              options={[
+                { value: "list", label: "Listado" },
+                { value: "calendar", label: "Calendario" },
+              ]}
+            />
             {isAdmin ? (
               <Button asChild>
                 <Link to="/clases/nueva">
@@ -131,11 +143,11 @@ export function ClassesPage() {
                 </Link>
               </Button>
             ) : null}
-          </>
+          </div>
         }
       />
 
-      <Card>
+      <Card className="overflow-hidden">
         <ListToolbar
           search={search}
           onSearchChange={setSearch}
@@ -184,21 +196,31 @@ export function ClassesPage() {
                 }
               }}
             />
+            {calendarError ? (
+              <Alert variant="destructive">
+                <AlertDescription>{calendarError}</AlertDescription>
+              </Alert>
+            ) : null}
             {suspended.length > 0 ? (
               <div className="rounded-lg border border-border bg-muted/20 p-3 text-sm">
                 <p className="mb-2 font-medium">Sesiones suspendidas esta semana</p>
                 <ul className="space-y-2">
                   {suspended.map((o) => (
-                    <li key={o.cancellationId ?? o.scheduleSlotId} className="flex flex-wrap items-center justify-between gap-2">
+                    <li
+                      key={`${o.scheduleSlotId}-${o.sessionDate}`}
+                      className="flex flex-wrap items-center justify-between gap-2"
+                    >
                       <span>
                         {o.sessionDate} · {o.className} · {o.startTime}–{o.endTime}
                         {o.reason ? ` — ${o.reason}` : ""}
                       </span>
-                      {isAdmin && o.cancellationId ? (
+                      {isAdmin ? (
                         <Button
+                          type="button"
                           size="sm"
                           variant="outline"
-                          onClick={() => restoreSession.mutate(o.cancellationId!)}
+                          disabled={restoreSession.isPending}
+                          onClick={() => restoreSession.mutate(o)}
                         >
                           <RotateCcw className="h-3.5 w-3.5" /> Restaurar
                         </Button>
