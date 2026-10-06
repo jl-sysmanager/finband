@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { selectClassName } from "@/lib/form-classes";
-import { cn, ensureMonthInOptions, monthOptions } from "@/lib/utils";
+import { FormSelect } from "@/components/form/FormSelect";
+import { ensureMonthInOptions, monthOptions } from "@/lib/utils";
 
 type Props = {
   value: string;
@@ -17,18 +17,14 @@ export function MonthSelect({ value, onChange, className, disabled, id }: Props)
   );
 
   return (
-    <select
+    <FormSelect
       id={id}
       disabled={disabled}
-      className={cn(selectClassName, className)}
+      className={className}
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+      onValueChange={onChange}
+      options={options}
+      placeholder="Mes…"
+    />
   );
 }

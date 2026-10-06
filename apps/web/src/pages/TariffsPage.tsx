@@ -1,11 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CLASS_TYPES, CLASS_TYPE_LABELS } from "@finband/shared";
 import { Plus, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { FormSelect } from "@/components/form/FormSelect";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DataTable,
   DataTableHead,
@@ -14,10 +22,14 @@ import {
   DataTableTh,
 } from "@/components/list/DataTable";
 import { ListToolbar } from "@/components/list/ListToolbar";
+import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import { PageHeader } from "@/components/list/PageHeader";
 import { ApiError, api } from "@/lib/api";
 import { formatMoney } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
+import { useConfirm } from "@/hooks/useConfirm";
+
+const NONE_CLASS = "__none__";
 
 type Rule = {
   id: string;
@@ -33,7 +45,10 @@ type Rule = {
 export function TariffsPage() {
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
   const qc = useQueryClient();
+  const { confirm, dialog: confirmDialog } = useConfirm();
+  const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Rule | null>(null);
+  const [classType, setClassType] = useState(NONE_CLASS);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -52,6 +67,7 @@ export function TariffsPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tariffs"] });
+      setFormOpen(false);
       setEditing(null);
     },
   });
@@ -60,10 +76,19 @@ export function TariffsPage() {
     mutationFn: (id: string) => api(`/tariffs/${id}`, { method: "DELETE" }),
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ["tariffs"] });
-      setEditing((prev) => (prev?.id === id ? null : prev));
+      if (editing?.id === id) {
+        setFormOpen(false);
+        setEditing(null);
+      }
       setDeleteError(null);
     },
   });
+
+  useEffect(() => {
+    if (formOpen) {
+      setClassType(editing?.classType ?? NONE_CLASS);
+    }
+  }, [formOpen, editing]);
 
   const filteredRules = useMemo(() => {
     if (!search.trim()) return rules.data ?? [];
@@ -76,10 +101,22 @@ export function TariffsPage() {
     );
   }, [rules.data, search]);
 
-  async function deleteRule(rule: Rule, e?: React.MouseEvent) {
-    e?.stopPropagation();
+  function openForm(rule?: Rule) {
+    setSaveError(null);
+    setDeleteError(null);
+    setEditing(rule ?? null);
+    setFormOpen(true);
+  }
+
+  async function deleteRule(rule: Rule) {
     if (!isAdmin) return;
-    if (!confirm(`¿Eliminar la tarifa «${rule.name}»?`)) return;
+    const ok = await confirm({
+      title: "Eliminar tarifa",
+      description: `¿Eliminar la tarifa «${rule.name}»?`,
+      confirmLabel: "Eliminar",
+      destructive: true,
+    });
+    if (!ok) return;
     setDeleteError(null);
     try {
       await removeRule.mutateAsync(rule.id);
@@ -94,13 +131,14 @@ export function TariffsPage() {
     setSaveError(null);
     const form = e.currentTarget;
     const fd = new FormData(form);
+    const ct = classType === NONE_CLASS ? null : classType;
     try {
       await saveRule.mutateAsync({
         id: editing?.id,
         name: fd.get("name"),
         instrument: fd.get("instrument") || null,
         level: fd.get("level") || null,
-        classType: fd.get("classType") || null,
+        classType: ct,
         amount: Number(fd.get("amount")),
         priority: Number(fd.get("priority") || 0),
       });
@@ -110,11 +148,24 @@ export function TariffsPage() {
     }
   }
 
+  const classTypeOptions = [
+    { value: NONE_CLASS, label: "Tipo clase (opc.)" },
+    ...CLASS_TYPES.map((t) => ({ value: t, label: CLASS_TYPE_LABELS[t] })),
+  ];
+
   return (
     <div className="page-container space-y-4">
+      {confirmDialog}
       <PageHeader
         title="Tarifas"
         description={`${filteredRules.length} reglas · La generación de cuotas se hace desde cada alumno`}
+        actions={
+          isAdmin ? (
+            <Button size="sm" onClick={() => openForm()}>
+              <Plus className="h-4 w-4" /> Nueva tarifa
+            </Button>
+          ) : null
+        }
       />
 
       {deleteError ? (
@@ -123,113 +174,91 @@ export function TariffsPage() {
         </Alert>
       ) : null}
 
+      <Dialog open={formOpen} onOpenChange={(o) => !o && setFormOpen(false)}>
+        <DialogContent size="lg">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Editar tarifa" : "Nueva tarifa"}</DialogTitle>
+          </DialogHeader>
+          <form key={editing?.id ?? "new"} onSubmit={onSubmitRule} className="grid gap-3 md:grid-cols-2">
+            <Input name="name" placeholder="Nombre" required defaultValue={editing?.name ?? ""} />
+            <Input
+              name="amount"
+              type="number"
+              step="0.01"
+              placeholder="Importe"
+              required
+              defaultValue={editing?.amount ?? ""}
+            />
+            <Input name="instrument" placeholder="Instrumento (opc.)" defaultValue={editing?.instrument ?? ""} />
+            <Input name="level" placeholder="Nivel (opc.)" defaultValue={editing?.level ?? ""} />
+            <FormSelect
+              value={classType}
+              onValueChange={setClassType}
+              options={classTypeOptions}
+            />
+            <Input name="priority" type="number" placeholder="Prioridad" defaultValue={editing?.priority ?? 0} />
+            {saveError ? (
+              <p className="md:col-span-2 text-sm text-destructive">{saveError}</p>
+            ) : null}
+            <DialogFooter className="md:col-span-2 pt-2">
+              {editing ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  disabled={removeRule.isPending}
+                  onClick={() => void deleteRule(editing)}
+                >
+                  <Trash2 className="h-4 w-4" /> Eliminar
+                </Button>
+              ) : null}
+              <Button type="button" variant="outline" size="sm" onClick={() => setFormOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" size="sm" disabled={saveRule.isPending}>
+                {editing ? "Guardar" : "Añadir"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       <Card className="overflow-hidden">
         <ListToolbar
           search={search}
           onSearchChange={setSearch}
           searchPlaceholder="Buscar tarifa, instrumento o nivel…"
         />
-        <CardContent className="space-y-4 pt-4">
+        <CardContent className="pt-4">
           <DataTable>
             <DataTableHead>
               <DataTableTh>Nombre</DataTableTh>
               <DataTableTh>Importe</DataTableTh>
-              {isAdmin ? <DataTableTh className="w-16" /> : null}
+              {isAdmin ? <DataTableTh className="w-14" /> : null}
             </DataTableHead>
             <tbody>
               {filteredRules.map((r) => (
-                <DataTableRow
-                  key={r.id}
-                  onClick={() => {
-                    if (!isAdmin) return;
-                    setSaveError(null);
-                    setDeleteError(null);
-                    setEditing(r);
-                  }}
-                >
+                <DataTableRow key={r.id} onClick={() => isAdmin && openForm(r)}>
                   <DataTableTd>{r.name}</DataTableTd>
                   <DataTableTd>{formatMoney(r.amount)}</DataTableTd>
                   {isAdmin ? (
                     <DataTableTd className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        aria-label="Eliminar tarifa"
-                        disabled={removeRule.isPending}
-                        onClick={(e) => void deleteRule(r, e)}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      <RowActionsMenu
+                        actions={[
+                          { label: "Editar", onSelect: () => openForm(r) },
+                          {
+                            label: "Eliminar",
+                            destructive: true,
+                            onSelect: () => void deleteRule(r),
+                          },
+                        ]}
+                      />
                     </DataTableTd>
                   ) : null}
                 </DataTableRow>
               ))}
             </tbody>
           </DataTable>
-          {isAdmin ? (
-            <form
-              key={editing?.id ?? "new"}
-              onSubmit={onSubmitRule}
-              className="grid gap-2 border-t border-border pt-4 md:grid-cols-2"
-            >
-              <p className="md:col-span-2 text-sm font-medium">
-                {editing ? "Editar tarifa" : "Nueva tarifa"}
-              </p>
-              <Input name="name" placeholder="Nombre" required defaultValue={editing?.name ?? ""} />
-              <Input
-                name="amount"
-                type="number"
-                step="0.01"
-                placeholder="Importe"
-                required
-                defaultValue={editing?.amount ?? ""}
-              />
-              <Input name="instrument" placeholder="Instrumento (opc.)" defaultValue={editing?.instrument ?? ""} />
-              <Input name="level" placeholder="Nivel (opc.)" defaultValue={editing?.level ?? ""} />
-              <select
-                name="classType"
-                className="h-10 rounded-lg border border-border bg-card px-3 text-sm"
-                defaultValue={editing?.classType ?? ""}
-              >
-                <option value="">Tipo clase (opc.)</option>
-                {CLASS_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {CLASS_TYPE_LABELS[t]}
-                  </option>
-                ))}
-              </select>
-              <Input name="priority" type="number" placeholder="Prioridad" defaultValue={editing?.priority ?? 0} />
-              {saveError ? <p className="md:col-span-2 text-sm text-destructive">{saveError}</p> : null}
-              <div className="md:col-span-2 flex flex-wrap gap-2">
-                <Button type="submit" disabled={saveRule.isPending}>
-                  <Plus className="h-4 w-4" /> {editing ? "Guardar cambios" : "Añadir regla"}
-                </Button>
-                {editing ? (
-                  <>
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      disabled={removeRule.isPending}
-                      onClick={() => void deleteRule(editing)}
-                    >
-                      <Trash2 className="h-4 w-4" /> Eliminar
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        setEditing(null);
-                        setSaveError(null);
-                      }}
-                    >
-                      Cancelar
-                    </Button>
-                  </>
-                ) : null}
-              </div>
-            </form>
-          ) : null}
         </CardContent>
       </Card>
     </div>

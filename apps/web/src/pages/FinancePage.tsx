@@ -1,14 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from "@finband/shared";
-import { Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { FormSelect } from "@/components/form/FormSelect";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { FilterField } from "@/components/list/FilterField";
 import { ListToolbar } from "@/components/list/ListToolbar";
 import { PageHeader } from "@/components/list/PageHeader";
+import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import {
   DataTable,
   DataTableHead,
@@ -20,7 +29,7 @@ import { ApiError, api } from "@/lib/api";
 import { buildQuery, firstDayOfCurrentMonthISO, formatDate, formatMoney, todayISO } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Separator } from "@/components/ui/separator";
+import { useConfirm } from "@/hooks/useConfirm";
 
 type FinanceProps = { mode: "incomes" | "expenses" };
 
@@ -35,11 +44,17 @@ type Entry = {
   category: { name: string };
 };
 
+const NO_METHOD = "__none__";
+
 export function FinancePage({ mode }: FinanceProps) {
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
   const qc = useQueryClient();
   const isIncome = mode === "incomes";
+  const { confirm, dialog: confirmDialog } = useConfirm();
+  const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Entry | null>(null);
+  const [categoryId, setCategoryId] = useState("");
+  const [method, setMethod] = useState(NO_METHOD);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -88,6 +103,7 @@ export function FinancePage({ mode }: FinanceProps) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [mode] });
+      setFormOpen(false);
       setEditing(null);
     },
   });
@@ -97,15 +113,31 @@ export function FinancePage({ mode }: FinanceProps) {
       api(`/finance/${isIncome ? "incomes" : "expenses"}/${id}`, { method: "DELETE" }),
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: [mode] });
-      setEditing((prev) => (prev?.id === id ? null : prev));
+      if (editing?.id === id) {
+        setFormOpen(false);
+        setEditing(null);
+      }
       setDeleteError(null);
     },
   });
 
-  async function deleteEntry(entry: Entry, e?: React.MouseEvent) {
-    e?.stopPropagation();
+  function openForm(entry?: Entry) {
+    setSaveError(null);
+    setEditing(entry ?? null);
+    setCategoryId(entry?.categoryId ?? categories.data?.[0]?.id ?? "");
+    setMethod(entry?.method ?? NO_METHOD);
+    setFormOpen(true);
+  }
+
+  async function deleteEntry(entry: Entry) {
     if (!isAdmin) return;
-    if (!confirm(`¿Eliminar el movimiento «${entry.concept}»?`)) return;
+    const ok = await confirm({
+      title: "Eliminar movimiento",
+      description: `¿Eliminar «${entry.concept}»?`,
+      confirmLabel: "Eliminar",
+      destructive: true,
+    });
+    if (!ok) return;
     setDeleteError(null);
     try {
       await remove.mutateAsync(entry.id);
@@ -128,11 +160,11 @@ export function FinancePage({ mode }: FinanceProps) {
       id: editing?.id,
       date: fd.get("date"),
       concept: fd.get("concept"),
-      categoryId: fd.get("categoryId"),
+      categoryId,
       amount: Number(fd.get("amount")),
       notes: fd.get("notes") || null,
     };
-    if (isIncome) body.method = fd.get("method") || null;
+    if (isIncome) body.method = method === NO_METHOD ? null : method;
     try {
       await save.mutateAsync(body);
       form.reset();
@@ -142,134 +174,119 @@ export function FinancePage({ mode }: FinanceProps) {
   }
 
   const formKey = editing?.id ?? "new";
-  const canShowEntryForm = categories.isSuccess;
+  const categoryOptions = (categories.data ?? []).map((c) => ({ value: c.id, label: c.name }));
+  const methodOptions = [
+    { value: NO_METHOD, label: "—" },
+    ...PAYMENT_METHODS.map((m) => ({ value: m, label: PAYMENT_METHOD_LABELS[m] })),
+  ];
 
   return (
     <div className="page-container space-y-4">
+      {confirmDialog}
       <PageHeader
         title={isIncome ? "Ingresos" : "Gastos"}
         description={`${filteredEntries.length} movimientos en el periodo`}
+        actions={
+          isAdmin ? (
+            <Button size="sm" onClick={() => openForm()} disabled={!categories.isSuccess}>
+              <Plus className="h-4 w-4" /> Nuevo movimiento
+            </Button>
+          ) : null
+        }
       />
       {deleteError ? (
         <Alert variant="destructive">
           <AlertDescription>{deleteError}</AlertDescription>
         </Alert>
       ) : null}
-      {isAdmin ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>{editing ? "Editar movimiento" : `Registrar ${isIncome ? "ingreso" : "gasto"}`}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {!canShowEntryForm ? (
-              <p className="text-sm text-muted-foreground">Cargando categorías…</p>
-            ) : (
-              <form key={formKey} onSubmit={onSubmit} className="grid gap-3 md:grid-cols-3">
-                <div className="space-y-1">
-                  <Label>Fecha</Label>
-                  <Input
-                    name="date"
-                    type="date"
-                    required
-                    defaultValue={editing ? toDateInput(editing.date) : undefined}
-                  />
-                </div>
-                <div className="space-y-1 md:col-span-2">
-                  <Label>Concepto</Label>
-                  <Input name="concept" required defaultValue={editing?.concept ?? ""} />
-                </div>
-                <div className="space-y-1">
-                  <Label>Categoría</Label>
-                  <select
-                    name="categoryId"
-                    required
-                    defaultValue={editing?.categoryId ?? categories.data?.[0]?.id}
-                    className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm"
-                  >
-                    {categories.data?.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <Label>Importe</Label>
-                  <Input
-                    name="amount"
-                    type="number"
-                    step="0.01"
-                    required
-                    defaultValue={editing?.amount ?? ""}
-                  />
-                </div>
-                {isIncome ? (
-                  <div className="space-y-1">
-                    <Label>Método de pago</Label>
-                    <select
-                      name="method"
-                      defaultValue={editing?.method ?? ""}
-                      className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm"
-                    >
-                      <option value="">—</option>
-                      {PAYMENT_METHODS.map((m) => (
-                        <option key={m} value={m}>
-                          {PAYMENT_METHOD_LABELS[m]}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : null}
-                <div className="space-y-1 md:col-span-2">
-                  <Label>Observaciones</Label>
-                  <Input name="notes" defaultValue={editing?.notes ?? ""} />
-                </div>
-                {saveError ? (
-                  <Alert variant="destructive" className="md:col-span-3">
-                    <AlertDescription>{saveError}</AlertDescription>
-                  </Alert>
-                ) : null}
-                <div className="md:col-span-3 flex flex-wrap gap-2">
-                  <Button type="submit" className="w-fit" disabled={save.isPending}>
-                    {editing ? "Guardar" : "Registrar"}
-                  </Button>
-                  {editing ? (
-                    <>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        disabled={remove.isPending}
-                        onClick={() => void deleteEntry(editing)}
-                      >
-                        <Trash2 className="h-4 w-4" /> Eliminar
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => {
-                          setEditing(null);
-                          setSaveError(null);
-                        }}
-                      >
-                        Cancelar
-                      </Button>
-                    </>
-                  ) : null}
-                </div>
-              </form>
-            )}
-          </CardContent>
-        </Card>
-      ) : null}
 
-      <Separator className="my-2" />
+      <Dialog open={formOpen} onOpenChange={(o) => !o && setFormOpen(false)}>
+        <DialogContent size="lg">
+          <DialogHeader>
+            <DialogTitle>
+              {editing ? "Editar movimiento" : `Registrar ${isIncome ? "ingreso" : "gasto"}`}
+            </DialogTitle>
+          </DialogHeader>
+          {!categories.isSuccess ? (
+            <p className="text-sm text-muted-foreground">Cargando categorías…</p>
+          ) : (
+            <form key={formKey} onSubmit={onSubmit} className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1">
+                <Label>Fecha</Label>
+                <Input
+                  name="date"
+                  type="date"
+                  required
+                  defaultValue={editing ? toDateInput(editing.date) : todayISO()}
+                />
+              </div>
+              <div className="space-y-1 md:col-span-2">
+                <Label>Concepto</Label>
+                <Input name="concept" required defaultValue={editing?.concept ?? ""} />
+              </div>
+              <div className="space-y-1">
+                <Label>Categoría</Label>
+                <FormSelect
+                  value={categoryId}
+                  onValueChange={setCategoryId}
+                  options={categoryOptions}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Importe</Label>
+                <Input
+                  name="amount"
+                  type="number"
+                  step="0.01"
+                  required
+                  defaultValue={editing?.amount ?? ""}
+                />
+              </div>
+              {isIncome ? (
+                <div className="space-y-1">
+                  <Label>Método de pago</Label>
+                  <FormSelect value={method} onValueChange={setMethod} options={methodOptions} />
+                </div>
+              ) : null}
+              <div className="space-y-1 md:col-span-2">
+                <Label>Observaciones</Label>
+                <Input name="notes" defaultValue={editing?.notes ?? ""} />
+              </div>
+              {saveError ? (
+                <Alert variant="destructive" className="md:col-span-2">
+                  <AlertDescription>{saveError}</AlertDescription>
+                </Alert>
+              ) : null}
+              <DialogFooter className="md:col-span-2 pt-2">
+                {editing ? (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => void deleteEntry(editing)}
+                  >
+                    <Trash2 className="h-4 w-4" /> Eliminar
+                  </Button>
+                ) : null}
+                <Button type="button" variant="outline" size="sm" onClick={() => setFormOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" size="sm" disabled={save.isPending}>
+                  {editing ? "Guardar" : "Registrar"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Card className="overflow-hidden">
         <ListToolbar search={search} onSearchChange={setSearch} searchPlaceholder="Buscar concepto o categoría…">
           <FilterField label="Desde">
-            <Input type="date" className="h-10" value={from} onChange={(e) => setFrom(e.target.value)} />
+            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
           </FilterField>
           <FilterField label="Hasta">
-            <Input type="date" className="h-10" value={to} onChange={(e) => setTo(e.target.value)} />
+            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
           </FilterField>
         </ListToolbar>
         <CardContent className="pt-4">
@@ -280,19 +297,11 @@ export function FinancePage({ mode }: FinanceProps) {
               <DataTableTh>Categoría</DataTableTh>
               {isIncome ? <DataTableTh>Método</DataTableTh> : null}
               <DataTableTh className="text-right">Importe</DataTableTh>
-              {isAdmin ? <DataTableTh className="w-24" /> : null}
+              {isAdmin ? <DataTableTh className="w-14" /> : null}
             </DataTableHead>
             <tbody>
               {filteredEntries.map((e) => (
-                <DataTableRow
-                  key={e.id}
-                  onClick={() => {
-                    if (!isAdmin) return;
-                    setSaveError(null);
-                    setDeleteError(null);
-                    setEditing(e);
-                  }}
-                >
+                <DataTableRow key={e.id} onClick={() => isAdmin && openForm(e)}>
                   <DataTableTd>{formatDate(e.date)}</DataTableTd>
                   <DataTableTd>{e.concept}</DataTableTd>
                   <DataTableTd>{e.category.name}</DataTableTd>
@@ -310,16 +319,16 @@ export function FinancePage({ mode }: FinanceProps) {
                   </DataTableTd>
                   {isAdmin ? (
                     <DataTableTd className="text-right" onClick={(ev) => ev.stopPropagation()}>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        aria-label="Eliminar movimiento"
-                        disabled={remove.isPending}
-                        onClick={(ev) => void deleteEntry(e, ev)}
-                      >
-                        <Trash2 className="h-4 w-4 text-expense" />
-                      </Button>
+                      <RowActionsMenu
+                        actions={[
+                          { label: "Editar", onSelect: () => openForm(e) },
+                          {
+                            label: "Eliminar",
+                            destructive: true,
+                            onSelect: () => void deleteEntry(e),
+                          },
+                        ]}
+                      />
                     </DataTableTd>
                   ) : null}
                 </DataTableRow>

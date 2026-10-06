@@ -1,5 +1,5 @@
-import { selectClassName } from "@/lib/form-classes";
-import { cn, yearOptions } from "@/lib/utils";
+import { FormSelect } from "@/components/form/FormSelect";
+import { yearOptions } from "@/lib/utils";
 
 type Props = {
   value: string;
@@ -9,20 +9,14 @@ type Props = {
 };
 
 export function YearSelect({ value, onChange, className, disabled }: Props) {
-  const options = yearOptions();
-
   return (
-    <select
+    <FormSelect
       disabled={disabled}
-      className={cn(selectClassName, className)}
+      className={className}
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+      onValueChange={onChange}
+      options={yearOptions()}
+      placeholder="Año…"
+    />
   );
 }

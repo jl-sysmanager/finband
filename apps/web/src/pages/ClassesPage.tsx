@@ -22,6 +22,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ApiError, api } from "@/lib/api";
 import { addDaysIso, buildQuery, mondayOfWeek, todayISO } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
+import { RowActionsMenu } from "@/components/list/RowActionsMenu";
+import { useConfirm } from "@/hooks/useConfirm";
 import { ChevronLeft, ChevronRight, Plus, RotateCcw, Trash2 } from "lucide-react";
 
 export function ClassesPage() {
@@ -31,6 +33,7 @@ export function ClassesPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   const weekStart = useMemo(() => mondayOfWeek(weekAnchor), [weekAnchor]);
   const weekEnd = useMemo(() => addDaysIso(weekStart, 6), [weekStart]);
@@ -109,13 +112,15 @@ export function ClassesPage() {
     },
   });
 
-  async function deleteClass(
-    cls: { id: string; name: string },
-    e?: React.MouseEvent,
-  ) {
-    e?.stopPropagation();
+  async function deleteClass(cls: { id: string; name: string }) {
     if (!isAdmin) return;
-    if (!confirm(`¿Eliminar la clase «${cls.name}»?`)) return;
+    const ok = await confirm({
+      title: "Eliminar clase",
+      description: `¿Eliminar la clase «${cls.name}»?`,
+      confirmLabel: "Eliminar",
+      destructive: true,
+    });
+    if (!ok) return;
     setDeleteError(null);
     try {
       await remove.mutateAsync(cls.id);
@@ -140,6 +145,7 @@ export function ClassesPage() {
 
   return (
     <div className="page-container space-y-4">
+      {confirmDialog}
       <PageHeader
         title="Clases"
         description={`${q.data?.length ?? 0} grupos`}
@@ -209,14 +215,14 @@ export function ClassesPage() {
               weekStartIso={weekStart}
               occurrences={items}
               isAdmin={isAdmin}
-              onCancel={(occ) => {
-                if (
-                  confirm(
-                    `¿Suspender la clase "${occ.className}" el ${occ.sessionDate} (${occ.startTime})?`,
-                  )
-                ) {
-                  cancelSession.mutate(occ);
-                }
+              onCancel={async (occ) => {
+                const ok = await confirm({
+                  title: "Suspender sesión",
+                  description: `¿Suspender "${occ.className}" el ${occ.sessionDate} (${occ.startTime})?`,
+                  confirmLabel: "Suspender",
+                  destructive: true,
+                });
+                if (ok) cancelSession.mutate(occ);
               }}
             />
             {calendarError ? (
@@ -289,16 +295,16 @@ export function ClassesPage() {
                     </DataTableTd>
                     <DataTableTd className="text-right" onClick={(e) => e.stopPropagation()}>
                       {isAdmin ? (
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          aria-label="Eliminar clase"
-                          disabled={remove.isPending}
-                          onClick={(e) => void deleteClass(c, e)}
-                        >
-                          <Trash2 className="h-4 w-4 text-expense" />
-                        </Button>
+                        <RowActionsMenu
+                          actions={[
+                            {
+                              label: "Eliminar",
+                              icon: <Trash2 className="h-4 w-4" />,
+                              destructive: true,
+                              onSelect: () => void deleteClass(c),
+                            },
+                          ]}
+                        />
                       ) : null}
                     </DataTableTd>
                   </DataTableRow>
