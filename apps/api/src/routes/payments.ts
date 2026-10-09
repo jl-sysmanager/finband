@@ -3,6 +3,8 @@ import { z } from "zod";
 import { PAYMENT_METHODS, studentPaymentSchema, teacherPayoutPaymentSchema } from "@finband/shared";
 import { calculateTeacherPayout } from "../lib/teacher-payout.js";
 import { feeStatus, payoutStatus } from "../lib/fee-status.js";
+import { recordAudit } from "../lib/audit.js";
+import { buildFeeReminder } from "../lib/reminders.js";
 import { prisma } from "../lib/prisma.js";
 
 async function syncFeePaid(feeId: string) {
@@ -123,6 +125,32 @@ export async function paymentRoutes(app: FastifyInstance) {
     return payment;
   });
 
+  app.get("/student-fees/:id/reminder", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      return await buildFeeReminder(id);
+    } catch {
+      return reply.status(404).send({ error: "Cuota no encontrada" });
+    }
+  });
+
+  app.post("/student-fees/:id/reminder", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = (request.body ?? {}) as { channel?: string };
+    try {
+      const payload = await buildFeeReminder(id);
+      await recordAudit(request, {
+        action: "REMINDER",
+        entityType: "student_fee",
+        entityId: id,
+        details: { channel: body.channel ?? "manual", studentId: payload.studentId },
+      });
+      return payload;
+    } catch {
+      return reply.status(404).send({ error: "Cuota no encontrada" });
+    }
+  });
+
   app.delete("/student-fees/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     const fee = await prisma.studentFee.findUnique({
@@ -131,6 +159,12 @@ export async function paymentRoutes(app: FastifyInstance) {
     });
     if (!fee) return reply.status(404).send({ error: "Cuota no encontrada" });
     await prisma.studentFee.delete({ where: { id } });
+    await recordAudit(request, {
+      action: "DELETE",
+      entityType: "student_fee",
+      entityId: id,
+      details: { yearMonth: fee.yearMonth, studentId: fee.studentId },
+    });
     return { ok: true, removedPayments: fee.payments.length };
   });
 
@@ -155,6 +189,12 @@ export async function paymentRoutes(app: FastifyInstance) {
     if (!existing) return reply.status(404).send({ error: "Cobro no encontrado" });
     await prisma.studentPayment.delete({ where: { id } });
     await syncFeePaid(existing.feeId);
+    await recordAudit(request, {
+      action: "DELETE",
+      entityType: "student_payment",
+      entityId: id,
+      details: { feeId: existing.feeId, amount: existing.amount },
+    });
     return { ok: true };
   });
 
@@ -284,6 +324,12 @@ export async function paymentRoutes(app: FastifyInstance) {
     const payout = await prisma.teacherPayout.findUnique({ where: { id } });
     if (!payout) return reply.status(404).send({ error: "Liquidación no encontrada" });
     await prisma.teacherPayout.delete({ where: { id } });
+    await recordAudit(request, {
+      action: "DELETE",
+      entityType: "teacher_payout",
+      entityId: id,
+      details: { yearMonth: payout.yearMonth, teacherId: payout.teacherId },
+    });
     return { ok: true };
   });
 }

@@ -315,3 +315,17 @@ model AttendanceRecord {
 
   @@unique([sessionId, studentId])
 }
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  username   String
+  action     String
+  entityType String
+  entityId   String?
+  details    String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+}

@@ -1,8 +1,14 @@
 import type { FastifyInstance } from "fastify";
-import { generateMonthSchema, tariffRuleSchema } from "@finband/shared";
+import {
+  generateMonthPreviewSchema,
+  generateMonthSchema,
+  tariffRuleSchema,
+} from "@finband/shared";
+import { recordAudit } from "../lib/audit.js";
 import {
   calculateStudentMonthlyFee,
   generateFeesForMonth,
+  previewFeesForMonth,
 } from "../lib/tariffs.js";
 import { prisma } from "../lib/prisma.js";
 
@@ -35,6 +41,12 @@ export async function tariffRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: "Tarifa no encontrada" });
     }
     await prisma.tariffRule.delete({ where: { id } });
+    await recordAudit(request, {
+      action: "DELETE",
+      entityType: "tariff",
+      entityId: id,
+      details: { name: existing.name },
+    });
     return { ok: true };
   });
 
@@ -50,12 +62,32 @@ export async function tariffRoutes(app: FastifyInstance) {
     }
   });
 
+  app.post("/generate-month/preview", async (request, reply) => {
+    const parsed = generateMonthPreviewSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
+    }
+    return previewFeesForMonth(parsed.data.yearMonth);
+  });
+
   app.post("/generate-month", async (request, reply) => {
     const parsed = generateMonthSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
-    const count = await generateFeesForMonth(parsed.data.yearMonth);
-    return { generated: count, yearMonth: parsed.data.yearMonth };
+    const { generated, skipped } = await generateFeesForMonth(parsed.data.yearMonth, {
+      excludeStudentIds: parsed.data.excludeStudentIds,
+    });
+    await recordAudit(request, {
+      action: "GENERATE_FEES",
+      entityType: "student_fee",
+      details: {
+        yearMonth: parsed.data.yearMonth,
+        generated,
+        skipped,
+        excluded: parsed.data.excludeStudentIds?.length ?? 0,
+      },
+    });
+    return { generated, skipped, yearMonth: parsed.data.yearMonth };
   });
 }

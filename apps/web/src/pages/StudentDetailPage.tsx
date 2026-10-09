@@ -15,7 +15,8 @@ import { useAuth } from "@/stores/auth";
 import { useSyncPageTitle } from "@/stores/page-title";
 import { FEE_STATUS_LABELS } from "@finband/shared";
 import { StudentFeeGeneratePanel } from "@/components/fees/StudentFeeGeneratePanel";
-import { Trash2 } from "lucide-react";
+import { FeeReminderDialog } from "@/components/fees/FeeReminderDialog";
+import { StudentEconomicHistory } from "@/components/students/StudentEconomicHistory";
 import { useState } from "react";
 import { useConfirm } from "@/hooks/useConfirm";
 
@@ -29,6 +30,7 @@ export function StudentDetailPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const { confirm, dialog: confirmDialog } = useConfirm();
+  const [reminderFeeId, setReminderFeeId] = useState<string | null>(null);
 
   const student = useQuery({
     queryKey: ["student", id],
@@ -160,6 +162,11 @@ export function StudentDetailPage() {
   return (
     <>
       {confirmDialog}
+      <FeeReminderDialog
+        feeId={reminderFeeId}
+        open={!!reminderFeeId}
+        onOpenChange={(o) => !o && setReminderFeeId(null)}
+      />
     <DetailPageLayout
       backTo="/alumnos"
       title={isNew ? "Nuevo alumno" : displayName || "Alumno"}
@@ -285,56 +292,20 @@ export function StudentDetailPage() {
                   </div>
                 ) : null}
                 {!isNew ? (
-                  <>
-                    <div className="md:col-span-2">
-                      <p className="mb-2 text-sm font-medium">Descuentos / becas</p>
-                      <ul className="text-sm">
-                        {(s?.discounts ?? []).map((d) => (
-                          <li key={d.id}>
-                            {d.name}: {d.type === "PERCENT" ? `${d.value}%` : formatMoney(d.value)}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div className="md:col-span-2 overflow-x-auto">
-                      <p className="mb-2 text-sm font-medium">Historial de cuotas</p>
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-muted-foreground">
-                            <th className="pb-2">Mes</th>
-                            <th className="pb-2">Total</th>
-                            <th className="pb-2">Pagado</th>
-                            <th className="pb-2">Estado</th>
-                            {isAdmin ? <th className="w-10" /> : null}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(s?.fees ?? []).map((f) => (
-                            <tr key={f.id} className="border-t border-border/60">
-                              <td className="py-2">{f.yearMonth}</td>
-                              <td>{formatMoney(f.totalAmount)}</td>
-                              <td>{formatMoney(f.amountPaid)}</td>
-                              <td>{FEE_STATUS_LABELS[f.status]}</td>
-                              {isAdmin ? (
-                                <td className="text-right">
-                                  <Button
-                                    type="button"
-                                    size="icon"
-                                    variant="ghost"
-                                    aria-label="Eliminar cuota"
-                                    disabled={deleteFee.isPending}
-                                    onClick={() => void deleteStudentFee(f.id)}
-                                  >
-                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                  </Button>
-                                </td>
-                              ) : null}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
+                  <div className="md:col-span-2">
+                    <StudentEconomicHistory
+                      fees={(s?.fees ?? []) as Parameters<typeof StudentEconomicHistory>[0]["fees"]}
+                      discounts={
+                        (s?.discounts ?? []) as Parameters<
+                          typeof StudentEconomicHistory
+                        >[0]["discounts"]
+                      }
+                      isAdmin={!!isAdmin}
+                      deleteFeePending={deleteFee.isPending}
+                      onDeleteFee={(feeId) => void deleteStudentFee(feeId)}
+                      onReminder={(feeId) => setReminderFeeId(feeId)}
+                    />
+                  </div>
                 ) : null}
               </CardContent>
             </Card>

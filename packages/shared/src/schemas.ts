@@ -161,6 +161,11 @@ export const attendanceRecordSchema = z.object({
 
 export const generateMonthSchema = z.object({
   yearMonth: z.string().regex(/^\d{4}-\d{2}$/),
+  excludeStudentIds: z.array(z.string().min(1)).optional(),
+});
+
+export const generateMonthPreviewSchema = z.object({
+  yearMonth: z.string().regex(/^\d{4}-\d{2}$/),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

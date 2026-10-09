@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { previewFeesForMonth } from "../lib/tariffs.js";
 import { prisma } from "../lib/prisma.js";
 
 function monthBounds(date = new Date()) {
@@ -140,6 +141,109 @@ export async function dashboardRoutes(app: FastifyInstance) {
       .slice(0, 15);
 
     return items;
+  });
+
+  app.get("/action-items", async (request) => {
+    const q = request.query as { yearMonth?: string };
+    const { ym } = monthBounds();
+    const yearMonth = q.yearMonth && /^\d{4}-\d{2}$/.test(q.yearMonth) ? q.yearMonth : ym;
+
+    const [
+      feePreview,
+      unpaidFees,
+      pendingPayouts,
+      studentsNoTeacherCount,
+      studentsNoTeacher,
+      classesNoScheduleCount,
+      classesNoSchedule,
+    ] = await Promise.all([
+        previewFeesForMonth(yearMonth),
+        prisma.studentFee.findMany({
+          where: { status: { in: ["PENDING", "PARTIAL"] } },
+          include: { student: { select: { firstName: true, lastName: true, status: true, deletedAt: true } } },
+          orderBy: { yearMonth: "desc" },
+          take: 200,
+        }),
+        prisma.teacherPayout.findMany({
+          where: { yearMonth, status: { in: ["PENDING", "PARTIAL"] } },
+          include: { teacher: { select: { firstName: true, lastName: true } } },
+        }),
+        prisma.student.count({
+          where: { deletedAt: null, status: "ACTIVE", primaryTeacherId: null },
+        }),
+        prisma.student.findMany({
+          where: {
+            deletedAt: null,
+            status: "ACTIVE",
+            primaryTeacherId: null,
+          },
+          orderBy: { lastName: "asc" },
+          take: 10,
+          select: { id: true, firstName: true, lastName: true },
+        }),
+        prisma.classGroup.count({ where: { scheduleSlots: { none: {} } } }),
+        prisma.classGroup.findMany({
+          where: { scheduleSlots: { none: {} } },
+          include: { teacher: { select: { firstName: true, lastName: true } } },
+          take: 10,
+        }),
+      ]);
+
+    const unpaidAll = unpaidFees
+      .filter((f) => !f.student.deletedAt && f.student.status === "ACTIVE")
+      .map((f) => ({
+        id: f.id,
+        studentId: f.studentId,
+        studentName: `${f.student.lastName}, ${f.student.firstName}`,
+        yearMonth: f.yearMonth,
+        pending: Math.max(0, f.totalAmount - f.amountPaid),
+      }))
+      .filter((f) => f.pending > 0.001)
+      .sort((a, b) => b.pending - a.pending);
+
+    const withoutFeeAll = feePreview.rows.filter((r) => r.totalAmount > 0 && !r.existingFeeId);
+
+    return {
+      yearMonth,
+      studentsWithoutFee: {
+        count: withoutFeeAll.length,
+        items: withoutFeeAll.slice(0, 8).map((r) => ({
+          studentId: r.studentId,
+          studentName: r.studentName,
+          totalAmount: r.totalAmount,
+        })),
+      },
+      unpaidFees: {
+        count: unpaidAll.length,
+        totalPending: unpaidAll.reduce((s, f) => s + f.pending, 0),
+        items: unpaidAll.slice(0, 10),
+      },
+      pendingPayouts: {
+        count: pendingPayouts.length,
+        totalPending: pendingPayouts.reduce((s, p) => s + (p.amount - p.amountPaid), 0),
+        items: pendingPayouts.map((p) => ({
+          id: p.id,
+          teacherName: `${p.teacher.lastName}, ${p.teacher.firstName}`,
+          yearMonth: p.yearMonth,
+          pending: p.amount - p.amountPaid,
+        })),
+      },
+      studentsWithoutTeacher: {
+        count: studentsNoTeacherCount,
+        items: studentsNoTeacher.map((s) => ({
+          id: s.id,
+          name: `${s.lastName}, ${s.firstName}`,
+        })),
+      },
+      classesWithoutSchedule: {
+        count: classesNoScheduleCount,
+        items: classesNoSchedule.map((c) => ({
+          id: c.id,
+          name: c.name,
+          teacherName: `${c.teacher.lastName}, ${c.teacher.firstName}`,
+        })),
+      },
+    };
   });
 
   app.get("/upcoming-due", async () => {

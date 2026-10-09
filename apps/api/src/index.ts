@@ -22,6 +22,7 @@ import { tariffRoutes } from "./routes/tariffs.js";
 import { teacherRoutes } from "./routes/teachers.js";
 import { backupRoutes } from "./routes/backup.js";
 import { userRoutes } from "./routes/users.js";
+import { auditRoutes } from "./routes/audit.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT) || (process.env.NODE_ENV === "production" ? 8080 : 3000);
@@ -64,6 +65,7 @@ await app.register(
         adminScope.addHook("preHandler", requireAdmin);
         await adminScope.register(userRoutes, { prefix: "/users" });
         await adminScope.register(backupRoutes, { prefix: "/backup" });
+        await adminScope.register(auditRoutes, { prefix: "/audit-logs" });
       }, { prefix: "/admin" });
     });
   },

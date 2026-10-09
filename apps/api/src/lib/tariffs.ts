@@ -147,17 +147,86 @@ export async function generateFeeForStudent(
   return { totalAmount: calc.totalAmount, yearMonth };
 }
 
-export async function generateFeesForMonth(yearMonth: string): Promise<number> {
+export type FeeGenerateIssue =
+  | "ready"
+  | "no_amount"
+  | "has_payments"
+  | "excluded";
+
+export async function previewFeesForMonth(yearMonth: string) {
   const students = await prisma.student.findMany({
     where: { deletedAt: null, status: "ACTIVE" },
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
   });
+  const existingFees = await prisma.studentFee.findMany({
+    where: { yearMonth },
+    include: { payments: { select: { id: true } } },
+  });
+  const feeByStudent = new Map(existingFees.map((f) => [f.studentId, f]));
 
-  let created = 0;
+  const rows: Array<{
+    studentId: string;
+    studentName: string;
+    totalAmount: number;
+    issue: FeeGenerateIssue;
+    existingFeeId: string | null;
+    amountPaid: number;
+  }> = [];
+
   for (const student of students) {
     const calc = await calculateStudentMonthlyFee(student.id);
-    if (calc.totalAmount <= 0) continue;
-    await upsertStudentFeeForMonth(student.id, yearMonth, calc);
-    created++;
+    const existing = feeByStudent.get(student.id);
+    let issue: FeeGenerateIssue = "ready";
+    if (calc.totalAmount <= 0) issue = "no_amount";
+    else if (existing && (existing.amountPaid > 0 || existing.payments.length > 0)) {
+      issue = "has_payments";
+    }
+
+    rows.push({
+      studentId: student.id,
+      studentName: `${student.lastName}, ${student.firstName}`,
+      totalAmount: calc.totalAmount,
+      issue,
+      existingFeeId: existing?.id ?? null,
+      amountPaid: existing?.amountPaid ?? 0,
+    });
   }
-  return created;
+
+  const eligible = rows.filter((r) => r.issue === "ready" && r.totalAmount > 0);
+  return {
+    yearMonth,
+    rows,
+    summary: {
+      activeStudents: students.length,
+      eligible: eligible.length,
+      skippedNoAmount: rows.filter((r) => r.issue === "no_amount").length,
+      skippedHasPayments: rows.filter((r) => r.issue === "has_payments").length,
+      totalEligibleAmount: eligible.reduce((s, r) => s + r.totalAmount, 0),
+    },
+  };
+}
+
+export async function generateFeesForMonth(
+  yearMonth: string,
+  options?: { excludeStudentIds?: string[] },
+): Promise<{ generated: number; skipped: number }> {
+  const exclude = new Set(options?.excludeStudentIds ?? []);
+  const preview = await previewFeesForMonth(yearMonth);
+
+  let generated = 0;
+  let skipped = 0;
+  for (const row of preview.rows) {
+    if (exclude.has(row.studentId)) {
+      skipped++;
+      continue;
+    }
+    if (row.issue !== "ready" || row.totalAmount <= 0) {
+      skipped++;
+      continue;
+    }
+    const calc = await calculateStudentMonthlyFee(row.studentId);
+    await upsertStudentFeeForMonth(row.studentId, yearMonth, calc);
+    generated++;
+  }
+  return { generated, skipped };
 }
