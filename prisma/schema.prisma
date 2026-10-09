@@ -65,6 +65,7 @@ model SchoolSettings {
   phone           String?
   email           String?
   logoBase64      String?
+  logoPath        String?
   activeYearId    String? @unique
   activeYear      AcademicYear? @relation("ActiveYear", fields: [activeYearId], references: [id])
   updatedAt       DateTime @updatedAt

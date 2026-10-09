@@ -16,7 +16,7 @@ import { dashboardRoutes } from "./routes/dashboard.js";
 import { financeRoutes } from "./routes/finance.js";
 import { paymentRoutes } from "./routes/payments.js";
 import { reportRoutes } from "./routes/reports.js";
-import { settingsRoutes } from "./routes/settings.js";
+import { publicSettingsRoutes, settingsRoutes } from "./routes/settings.js";
 import { studentRoutes } from "./routes/students.js";
 import { tariffRoutes } from "./routes/tariffs.js";
 import { teacherRoutes } from "./routes/teachers.js";
@@ -45,6 +45,7 @@ app.get("/api/health", async () => ({ ok: true }));
 await app.register(
   async (api) => {
     await api.register(publicAuthRoutes, { prefix: "/auth" });
+    await api.register(publicSettingsRoutes, { prefix: "/settings" });
 
     await api.register(async (secured) => {
       secured.addHook("preHandler", authenticate);

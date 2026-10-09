@@ -1,5 +1,6 @@
 import PDFDocument from "pdfkit";
 import { prisma } from "./prisma.js";
+import { readLogoBuffer } from "./school-logo.js";
 
 const ACCENT = "#2563eb";
 const MUTED = "#64748b";
@@ -7,6 +8,9 @@ const BORDER = "#e2e8f0";
 const PAGE_MARGIN = 48;
 /** Zona reservada al pie (numeración + marca) */
 const FOOTER_ZONE = 44;
+const LOGO_BOX = 52;
+const LOGO_GAP = 10;
+const TEXT_LEFT = PAGE_MARGIN + LOGO_BOX + LOGO_GAP;
 
 export function formatEuro(n: number) {
   return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(n);
@@ -14,12 +18,23 @@ export function formatEuro(n: number) {
 
 export async function getSchoolBranding() {
   const s = await prisma.schoolSettings.findUnique({ where: { id: "default" } });
+  let logoBuffer: Buffer | null = null;
+  if (s?.logoPath) {
+    logoBuffer = await readLogoBuffer(s.logoPath);
+  } else if (s?.logoBase64?.startsWith("data:image")) {
+    try {
+      const b64 = s.logoBase64.split(",")[1];
+      if (b64) logoBuffer = Buffer.from(b64, "base64");
+    } catch {
+      logoBuffer = null;
+    }
+  }
   return {
     name: s?.name ?? "Escuela de Música",
     address: s?.address ?? "",
     phone: s?.phone ?? "",
     email: s?.email ?? "",
-    logoBase64: s?.logoBase64 ?? null,
+    logoBuffer,
   };
 }
 
@@ -53,40 +68,40 @@ export function pdfToBuffer(doc: PdfDoc): Promise<Buffer> {
 export async function drawLetterhead(doc: PdfDoc, documentTitle: string, reference?: string) {
   const school = await getSchoolBranding();
   const top = doc.y;
+  const metaLine = [school.address, school.phone, school.email].filter(Boolean).join(" · ");
 
-  if (school.logoBase64?.startsWith("data:image")) {
+  if (school.logoBuffer) {
     try {
-      const b64 = school.logoBase64.split(",")[1];
-      if (b64) {
-        doc.image(Buffer.from(b64, "base64"), 48, top, { width: 48 });
-      }
+      doc.image(school.logoBuffer, PAGE_MARGIN, top, { fit: [LOGO_BOX, LOGO_BOX] });
     } catch {
       /* skip logo */
     }
   }
 
+  const nameY = metaLine ? top + 4 : top + 14;
   doc
     .font("Helvetica-Bold")
     .fontSize(16)
     .fillColor("#0f172a")
-    .text(school.name, 110, top, { width: 400 });
+    .text(school.name, TEXT_LEFT, nameY, { width: doc.page.width - TEXT_LEFT - PAGE_MARGIN });
 
-  doc
-    .font("Helvetica")
-    .fontSize(9)
-    .fillColor(MUTED)
-    .text([school.address, school.phone, school.email].filter(Boolean).join(" · "), 110, top + 22, {
-      width: 400,
-    });
+  if (metaLine) {
+    doc
+      .font("Helvetica")
+      .fontSize(9)
+      .fillColor(MUTED)
+      .text(metaLine, TEXT_LEFT, nameY + 20, { width: doc.page.width - TEXT_LEFT - PAGE_MARGIN });
+  }
 
+  const ruleY = top + LOGO_BOX + 8;
   doc
-    .moveTo(48, top + 52)
-    .lineTo(doc.page.width - 48, top + 52)
+    .moveTo(PAGE_MARGIN, ruleY)
+    .lineTo(doc.page.width - PAGE_MARGIN, ruleY)
     .strokeColor(ACCENT)
     .lineWidth(2)
     .stroke();
 
-  doc.y = top + 68;
+  doc.y = ruleY + 16;
   doc.font("Helvetica-Bold").fontSize(20).fillColor("#0f172a").text(documentTitle);
   if (reference) {
     doc

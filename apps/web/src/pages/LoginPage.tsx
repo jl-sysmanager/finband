@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Music2 } from "lucide-react";
+import { SchoolLogo } from "@/components/layout/SchoolLogo";
+import { useSchoolBranding } from "@/hooks/useSchoolBranding";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,6 +11,7 @@ import { ApiError } from "@/lib/api";
 import { useAuth } from "@/stores/auth";
 
 export function LoginPage() {
+  const branding = useSchoolBranding();
   const { login } = useAuth();
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
@@ -35,10 +37,14 @@ export function LoginPage() {
     <div className="flex min-h-screen flex-col md:flex-row">
       <div className="flex flex-1 flex-col justify-center bg-sidebar px-8 py-12 text-sidebar-foreground md:px-12">
         <div className="mx-auto max-w-md">
-          <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-xl bg-sidebar-accent text-primary-foreground">
-            <Music2 className="h-7 w-7" />
-          </div>
-          <h1 className="text-3xl font-semibold tracking-tight">Finband</h1>
+          <SchoolLogo
+            className="mb-6 [&_p]:text-sidebar-foreground"
+            name={branding.data?.name ?? "Finband"}
+            hasLogo={branding.data?.hasLogo ?? false}
+            updatedAt={branding.data?.updatedAt}
+            size="lg"
+            showName
+          />
           <p className="mt-3 text-sidebar-muted">
             Gestión administrativa y económica de tu escuela de música: alumnos, clases, cobros e
             informes en un solo lugar.
