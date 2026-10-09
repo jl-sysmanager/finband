@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CLASS_TYPES, CLASS_TYPE_LABELS } from "@finband/shared";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { TablePagination } from "@/components/list/TablePagination";
+import { usePagination } from "@/hooks/usePagination";
 import { FormSelect } from "@/components/form/FormSelect";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -101,6 +103,12 @@ export function TariffsPage() {
         (r.level?.toLowerCase().includes(s) ?? false),
     );
   }, [rules.data, search]);
+
+  const pagination = usePagination(filteredRules, 12);
+
+  useEffect(() => {
+    pagination.setPage(1);
+  }, [search]);
 
   function openForm(rule?: Rule) {
     setSaveError(null);
@@ -229,6 +237,15 @@ export function TariffsPage() {
             searchPlaceholder="Buscar tarifa, instrumento o nivel…"
           />
         }
+        footer={
+          <TablePagination
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            totalItems={pagination.totalItems}
+            pageSize={pagination.pageSize}
+            onPageChange={pagination.setPage}
+          />
+        }
       >
         <QueryState
           query={rules}
@@ -244,14 +261,14 @@ export function TariffsPage() {
         >
           {() => (
           <div className="px-1 pb-4 pt-2">
-          <DataTable>
+          <DataTable maxBodyHeight="min(48vh, 480px)">
             <DataTableHead>
               <DataTableTh>Nombre</DataTableTh>
               <DataTableTh>Importe</DataTableTh>
               {isAdmin ? <DataTableTh className="w-14" /> : null}
             </DataTableHead>
             <tbody>
-              {filteredRules.map((r) => (
+              {pagination.slice.map((r) => (
                 <DataTableRow key={r.id} onClick={() => isAdmin && openForm(r)}>
                   <DataTableTd>{r.name}</DataTableTd>
                   <DataTableTd>{formatMoney(r.amount)}</DataTableTd>

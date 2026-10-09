@@ -1,9 +1,21 @@
 import type { MouseEventHandler, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-export function DataTable({ children, className }: { children: ReactNode; className?: string }) {
+export function DataTable({
+  children,
+  className,
+  maxBodyHeight,
+}: {
+  children: ReactNode;
+  className?: string;
+  /** Limit vertical scroll inside long lists */
+  maxBodyHeight?: string;
+}) {
   return (
-    <div className={cn("overflow-x-auto", className)}>
+    <div
+      className={cn("overflow-x-auto", maxBodyHeight && "overflow-y-auto", className)}
+      style={maxBodyHeight ? { maxHeight: maxBodyHeight } : undefined}
+    >
       <table className="w-full text-sm">{children}</table>
     </div>
   );

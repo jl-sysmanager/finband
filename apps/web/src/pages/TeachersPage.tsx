@@ -1,7 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Calculator, Plus, Trash2, Users } from "lucide-react";
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { TeacherQuickPanel } from "@/components/detail/TeacherQuickPanel";
+import { TablePagination } from "@/components/list/TablePagination";
+import { usePagination } from "@/hooks/usePagination";
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { ListPageLayout } from "@/components/layout/ListPageLayout";
 import { QueryState } from "@/components/layout/QueryState";
 import { TeacherPayoutPanel } from "@/components/payouts/TeacherPayoutPanel";
@@ -40,7 +51,7 @@ export function TeachersPage() {
   const [search, setSearch] = useState("");
   const [payoutTeacher, setPayoutTeacher] = useState<TeacherRow | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const navigate = useNavigate();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const qc = useQueryClient();
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
   const { confirm, dialog: confirmDialog } = useConfirm();
@@ -50,6 +61,21 @@ export function TeachersPage() {
     queryFn: () =>
       api<TeacherRow[]>(`/teachers${buildQuery({ search: search || undefined })}`),
   });
+
+  const filtered = useMemo(() => {
+    const rows = q.data ?? [];
+    if (!search.trim()) return rows;
+    const s = search.toLowerCase();
+    return rows.filter(
+      (t) =>
+        t.firstName.toLowerCase().includes(s) ||
+        t.lastName.toLowerCase().includes(s) ||
+        (t.specialty?.toLowerCase().includes(s) ?? false),
+    );
+  }, [q.data, search]);
+
+  const pagination = usePagination(filtered, 12);
+  const selectedRow = filtered.find((t) => t.id === selectedId);
 
   const remove = useMutation({
     mutationFn: (id: string) => api(`/teachers/${id}`, { method: "DELETE" }),
@@ -86,6 +112,18 @@ export function TeachersPage() {
         </Alert>
       ) : null}
 
+      <Sheet open={!!selectedId} onOpenChange={(o) => !o && setSelectedId(null)}>
+        <SheetContent size="lg">
+          <SheetHeader>
+            <SheetTitle>
+              {selectedRow ? `${selectedRow.lastName}, ${selectedRow.firstName}` : "Profesor"}
+            </SheetTitle>
+            <SheetDescription>Vista rápida</SheetDescription>
+          </SheetHeader>
+          <SheetBody>{selectedId ? <TeacherQuickPanel teacherId={selectedId} /> : null}</SheetBody>
+        </SheetContent>
+      </Sheet>
+
       <Dialog open={!!payoutTeacher} onOpenChange={(o) => !o && setPayoutTeacher(null)}>
         <DialogContent size="md">
           <DialogHeader>
@@ -104,7 +142,16 @@ export function TeachersPage() {
 
       <ListPageLayout
         title="Profesores"
-        description={`${q.data?.length ?? 0} en plantilla`}
+        description={`${filtered.length} en plantilla`}
+        footer={
+          <TablePagination
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            totalItems={pagination.totalItems}
+            pageSize={pagination.pageSize}
+            onPageChange={pagination.setPage}
+          />
+        }
         actions={
           isAdmin ? (
             <Button asChild size="sm">
@@ -129,8 +176,8 @@ export function TeachersPage() {
           emptyTitle="No hay profesores"
           emptyDescription="Crea un profesor para asignar clases."
         >
-          {(data) => (
-            <DataTable>
+          {() => (
+            <DataTable maxBodyHeight="min(52vh, 520px)">
               <DataTableHead>
                 <DataTableTh>Nombre</DataTableTh>
                 <DataTableTh>Especialidad</DataTableTh>
@@ -139,8 +186,12 @@ export function TeachersPage() {
                 {isAdmin ? <DataTableTh className="w-14" /> : null}
               </DataTableHead>
               <tbody>
-                {data.map((t) => (
-                  <DataTableRow key={t.id} onClick={() => navigate(`/profesores/${t.id}`)}>
+                {pagination.slice.map((t) => (
+                  <DataTableRow
+                    key={t.id}
+                    className={selectedId === t.id ? "bg-primary/5" : undefined}
+                    onClick={() => setSelectedId(t.id)}
+                  >
                     <DataTableTd className="font-medium">
                       {t.lastName}, {t.firstName}
                     </DataTableTd>
