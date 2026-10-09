@@ -12,7 +12,9 @@ import {
 } from "@/components/list/DataTable";
 import { WorkspaceShell } from "@/components/layout/PageShell";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ApiError, api, downloadUrl, uploadBackup } from "@/lib/api";
+import { ApiError, api, deleteSchoolLogo, downloadUrl, uploadBackup, uploadSchoolLogo } from "@/lib/api";
+import { SchoolLogo } from "@/components/layout/SchoolLogo";
+import { schoolLogoUrl } from "@/lib/school-branding";
 import { FormSelect } from "@/components/form/FormSelect";
 import {
   Dialog,
@@ -50,11 +52,14 @@ export function SettingsPage() {
   const [backupError, setBackupError] = useState<string | null>(null);
   const [backupOk, setBackupOk] = useState<string | null>(null);
   const [restorePending, setRestorePending] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
   const { confirm, dialog: confirmDialog } = useConfirm();
 
   const school = useQuery({
     queryKey: ["school"],
-    queryFn: () => api<Record<string, string>>("/settings/school"),
+    queryFn: () =>
+      api<Record<string, string> & { hasLogo?: boolean; updatedAt?: string }>("/settings/school"),
   });
 
   const years = useQuery({
@@ -71,8 +76,45 @@ export function SettingsPage() {
   const saveSchool = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       api("/settings/school", { method: "PATCH", body: JSON.stringify(body) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["school"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["school"] });
+      qc.invalidateQueries({ queryKey: ["school-branding"] });
+    },
   });
+
+  async function onLogoSelected(file: File | null) {
+    if (!file || !isAdmin) return;
+    setLogoError(null);
+    setLogoUploading(true);
+    try {
+      await uploadSchoolLogo(file);
+      await qc.invalidateQueries({ queryKey: ["school"] });
+      await qc.invalidateQueries({ queryKey: ["school-branding"] });
+    } catch (err) {
+      setLogoError(err instanceof ApiError ? err.message : "No se pudo subir el logotipo");
+    } finally {
+      setLogoUploading(false);
+    }
+  }
+
+  async function onLogoRemove() {
+    if (!isAdmin) return;
+    const ok = await confirm({
+      title: "Quitar logotipo",
+      description: "¿Eliminar el logotipo del centro?",
+      confirmLabel: "Eliminar",
+      destructive: true,
+    });
+    if (!ok) return;
+    setLogoError(null);
+    try {
+      await deleteSchoolLogo();
+      await qc.invalidateQueries({ queryKey: ["school"] });
+      await qc.invalidateQueries({ queryKey: ["school-branding"] });
+    } catch (err) {
+      setLogoError(err instanceof ApiError ? err.message : "No se pudo eliminar el logotipo");
+    }
+  }
 
   const createUser = useMutation({
     mutationFn: () =>
@@ -194,6 +236,45 @@ export function SettingsPage() {
             <div className="space-y-1">
               <Label>Dirección</Label>
               <Input name="address" defaultValue={school.data?.address ?? ""} disabled={!isAdmin} />
+            </div>
+            <div className="space-y-3 md:col-span-2">
+              <Label>Logotipo del centro</Label>
+              <p className="text-xs text-muted-foreground">
+                Se guarda en el volumen de datos del servidor (persistente en Railway). Aparece en la
+                web y en los PDF.
+              </p>
+              <div className="flex flex-wrap items-center gap-4 rounded-lg border border-border bg-muted/20 p-4">
+                {school.data?.hasLogo ? (
+                  <img
+                    src={schoolLogoUrl(school.data.updatedAt)}
+                    alt=""
+                    className="h-14 max-w-[200px] object-contain"
+                  />
+                ) : (
+                  <SchoolLogo
+                    name={school.data?.name ?? "Centro"}
+                    hasLogo={false}
+                    showName={false}
+                    size="md"
+                  />
+                )}
+                {isAdmin ? (
+                  <div className="flex flex-wrap gap-2">
+                    <Input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      disabled={logoUploading}
+                      onChange={(e) => void onLogoSelected(e.target.files?.[0] ?? null)}
+                    />
+                    {school.data?.hasLogo ? (
+                      <Button type="button" variant="outline" size="sm" onClick={() => void onLogoRemove()}>
+                        <Trash2 className="h-4 w-4" /> Quitar
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+              {logoError ? <p className="text-sm text-destructive">{logoError}</p> : null}
             </div>
             <div className="space-y-1 md:col-span-2">
               <Label>Curso académico activo</Label>
