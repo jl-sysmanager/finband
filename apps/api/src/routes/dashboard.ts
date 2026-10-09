@@ -75,35 +75,53 @@ export async function dashboardRoutes(app: FastifyInstance) {
     }
     const start = new Date(now.getFullYear(), now.getMonth() - 11, 1);
 
-    const [incomes, expenses] = await Promise.all([
+    const monthSet = new Set(months);
+    const zeroed = () => Object.fromEntries(months.map((m) => [m, 0])) as Record<string, number>;
+
+    const [incomes, expenses, studentPayments, studentFees, teacherPayouts] = await Promise.all([
       prisma.incomeEntry.findMany({ where: { date: { gte: start } } }),
       prisma.expenseEntry.findMany({ where: { date: { gte: start } } }),
+      prisma.studentPayment.findMany({ where: { paidAt: { gte: start } } }),
+      prisma.studentFee.findMany({ where: { yearMonth: { in: [...months] } } }),
+      prisma.teacherPayout.findMany({ where: { yearMonth: { in: [...months] } } }),
     ]);
 
-    const incomeByMonth = new Map<string, number>();
-    const expenseByMonth = new Map<string, number>();
-    for (const m of months) {
-      incomeByMonth.set(m, 0);
-      expenseByMonth.set(m, 0);
-    }
+    const incomeByMonth = zeroed();
+    const expenseByMonth = zeroed();
+    const feesIssuedByMonth = zeroed();
+    const feesCollectedByMonth = zeroed();
+    const payoutsPaidByMonth = zeroed();
 
     for (const row of incomes) {
       const key = `${row.date.getFullYear()}-${String(row.date.getMonth() + 1).padStart(2, "0")}`;
-      if (incomeByMonth.has(key)) {
-        incomeByMonth.set(key, (incomeByMonth.get(key) ?? 0) + row.amount);
-      }
+      if (monthSet.has(key)) incomeByMonth[key] = (incomeByMonth[key] ?? 0) + row.amount;
     }
     for (const row of expenses) {
       const key = `${row.date.getFullYear()}-${String(row.date.getMonth() + 1).padStart(2, "0")}`;
-      if (expenseByMonth.has(key)) {
-        expenseByMonth.set(key, (expenseByMonth.get(key) ?? 0) + row.amount);
+      if (monthSet.has(key)) expenseByMonth[key] = (expenseByMonth[key] ?? 0) + row.amount;
+    }
+    for (const row of studentPayments) {
+      const key = `${row.paidAt.getFullYear()}-${String(row.paidAt.getMonth() + 1).padStart(2, "0")}`;
+      if (monthSet.has(key)) feesCollectedByMonth[key] = (feesCollectedByMonth[key] ?? 0) + row.amount;
+    }
+    for (const row of studentFees) {
+      if (monthSet.has(row.yearMonth)) {
+        feesIssuedByMonth[row.yearMonth] = (feesIssuedByMonth[row.yearMonth] ?? 0) + row.totalAmount;
+      }
+    }
+    for (const row of teacherPayouts) {
+      if (monthSet.has(row.yearMonth)) {
+        payoutsPaidByMonth[row.yearMonth] = (payoutsPaidByMonth[row.yearMonth] ?? 0) + row.amountPaid;
       }
     }
 
     return months.map((month) => ({
       month,
-      income: incomeByMonth.get(month) ?? 0,
-      expenses: expenseByMonth.get(month) ?? 0,
+      income: Math.round((incomeByMonth[month] ?? 0) * 100) / 100,
+      expenses: Math.round((expenseByMonth[month] ?? 0) * 100) / 100,
+      feesIssued: Math.round((feesIssuedByMonth[month] ?? 0) * 100) / 100,
+      feesCollected: Math.round((feesCollectedByMonth[month] ?? 0) * 100) / 100,
+      teacherPayoutsPaid: Math.round((payoutsPaidByMonth[month] ?? 0) * 100) / 100,
     }));
   });
 

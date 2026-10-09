@@ -8,18 +8,12 @@ import { FormSelect } from "@/components/form/FormSelect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { EntityDetailSheet } from "@/components/layout/EntityDetailSheet";
+import { SheetFooter } from "@/components/ui/sheet";
 import { FilterField } from "@/components/list/FilterField";
 import { ListToolbar } from "@/components/list/ListToolbar";
 import { ListShell } from "@/components/layout/PageShell";
 import { QueryState } from "@/components/layout/QueryState";
-import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import {
   DataTable,
   DataTableHead,
@@ -54,7 +48,7 @@ export function FinancePage({ mode }: FinanceProps) {
   const qc = useQueryClient();
   const isIncome = mode === "incomes";
   const { confirm, dialog: confirmDialog } = useConfirm();
-  const [formOpen, setFormOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<Entry | null>(null);
   const [categoryId, setCategoryId] = useState("");
   const [method, setMethod] = useState(NO_METHOD);
@@ -112,7 +106,7 @@ export function FinancePage({ mode }: FinanceProps) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [mode] });
-      setFormOpen(false);
+      setSheetOpen(false);
       setEditing(null);
       toast("Movimiento guardado", "success");
     },
@@ -124,7 +118,7 @@ export function FinancePage({ mode }: FinanceProps) {
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: [mode] });
       if (editing?.id === id) {
-        setFormOpen(false);
+        setSheetOpen(false);
         setEditing(null);
       }
       setDeleteError(null);
@@ -136,7 +130,7 @@ export function FinancePage({ mode }: FinanceProps) {
     setEditing(entry ?? null);
     setCategoryId(entry?.categoryId ?? categories.data?.[0]?.id ?? "");
     setMethod(entry?.method ?? NO_METHOD);
-    setFormOpen(true);
+    setSheetOpen(true);
   }
 
   async function deleteEntry(entry: Entry) {
@@ -199,17 +193,36 @@ export function FinancePage({ mode }: FinanceProps) {
         </Alert>
       ) : null}
 
-      <Dialog open={formOpen} onOpenChange={(o) => !o && setFormOpen(false)}>
-        <DialogContent size="lg">
-          <DialogHeader>
-            <DialogTitle>
-              {editing ? "Editar movimiento" : `Registrar ${isIncome ? "ingreso" : "gasto"}`}
-            </DialogTitle>
-          </DialogHeader>
+      <EntityDetailSheet
+        open={sheetOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setSheetOpen(false);
+            setEditing(null);
+          }
+        }}
+        size="lg"
+        title={editing ? editing.concept : `Nuevo ${isIncome ? "ingreso" : "gasto"}`}
+        description={editing ? formatDate(editing.date) : "Registrar movimiento en el libro"}
+        footer={
+          isAdmin && categories.isSuccess ? (
+            <SheetFooter className="w-full border-0 bg-transparent p-0">
+              {editing ? (
+                <Button type="button" variant="destructive" size="sm" onClick={() => void deleteEntry(editing)}>
+                  <Trash2 className="h-4 w-4" /> Eliminar
+                </Button>
+              ) : null}
+              <Button type="submit" form="finance-sheet-form" size="sm" disabled={save.isPending}>
+                {editing ? "Guardar" : "Registrar"}
+              </Button>
+            </SheetFooter>
+          ) : undefined
+        }
+      >
           {!categories.isSuccess ? (
             <p className="text-sm text-muted-foreground">Cargando categorías…</p>
           ) : (
-            <form key={formKey} onSubmit={onSubmit} className="grid gap-3 md:grid-cols-2">
+            <form id="finance-sheet-form" key={formKey} onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label>Fecha</Label>
                 <Input
@@ -252,32 +265,13 @@ export function FinancePage({ mode }: FinanceProps) {
                 <Input name="notes" defaultValue={editing?.notes ?? ""} />
               </div>
               {saveError ? (
-                <Alert variant="destructive" className="md:col-span-2">
+                <Alert variant="destructive" className="sm:col-span-2">
                   <AlertDescription>{saveError}</AlertDescription>
                 </Alert>
               ) : null}
-              <DialogFooter className="md:col-span-2 pt-2">
-                {editing ? (
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => void deleteEntry(editing)}
-                  >
-                    <Trash2 className="h-4 w-4" /> Eliminar
-                  </Button>
-                ) : null}
-                <Button type="button" variant="outline" size="sm" onClick={() => setFormOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" size="sm" disabled={save.isPending}>
-                  {editing ? "Guardar" : "Registrar"}
-                </Button>
-              </DialogFooter>
             </form>
           )}
-        </DialogContent>
-      </Dialog>
+      </EntityDetailSheet>
 
       <ListShell
         title={isIncome ? "Ingresos" : "Gastos"}
@@ -319,11 +313,14 @@ export function FinancePage({ mode }: FinanceProps) {
               <DataTableTh>Categoría</DataTableTh>
               {isIncome ? <DataTableTh>Método</DataTableTh> : null}
               <DataTableTh className="text-right">Importe</DataTableTh>
-              {isAdmin ? <DataTableTh className="w-14" /> : null}
             </DataTableHead>
             <tbody>
               {pagination.slice.map((e) => (
-                <DataTableRow key={e.id} onClick={() => isAdmin && openForm(e)}>
+                <DataTableRow
+                  key={e.id}
+                  className={editing?.id === e.id && sheetOpen ? "bg-primary/5" : undefined}
+                  onClick={() => isAdmin && openForm(e)}
+                >
                   <DataTableTd>{formatDate(e.date)}</DataTableTd>
                   <DataTableTd>{e.concept}</DataTableTd>
                   <DataTableTd>{e.category.name}</DataTableTd>
@@ -339,20 +336,6 @@ export function FinancePage({ mode }: FinanceProps) {
                   >
                     {formatMoney(e.amount)}
                   </DataTableTd>
-                  {isAdmin ? (
-                    <DataTableTd className="text-right" onClick={(ev) => ev.stopPropagation()}>
-                      <RowActionsMenu
-                        actions={[
-                          { label: "Editar", onSelect: () => openForm(e) },
-                          {
-                            label: "Eliminar",
-                            destructive: true,
-                            onSelect: () => void deleteEntry(e),
-                          },
-                        ]}
-                      />
-                    </DataTableTd>
-                  ) : null}
                 </DataTableRow>
               ))}
             </tbody>
