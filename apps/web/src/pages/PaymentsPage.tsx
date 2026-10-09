@@ -4,6 +4,17 @@ import { Bell, FileText, Layers, Trash2 } from "lucide-react";
 import { BulkFeeGenerateDialog } from "@/components/fees/BulkFeeGenerateDialog";
 import { FeeReminderDialog } from "@/components/fees/FeeReminderDialog";
 import { useMemo, useState } from "react";
+import { CollapsibleSection } from "@/components/list/CollapsibleSection";
+import { TablePagination } from "@/components/list/TablePagination";
+import { usePagination } from "@/hooks/usePagination";
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { FormSelect } from "@/components/form/FormSelect";
 import { MonthSelect } from "@/components/form/MonthSelect";
 import {
@@ -110,6 +121,7 @@ export function PaymentsPage() {
   const [payOpen, setPayOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [reminderFeeId, setReminderFeeId] = useState<string | null>(null);
+  const [sheetFee, setSheetFee] = useState<StudentFee | null>(null);
   const { confirm, dialog: confirmDialog } = useConfirm();
 
   const feeQuery = buildQuery({
@@ -238,6 +250,10 @@ export function PaymentsPage() {
     setPayAmount(pending > 0 ? String(pending) : "");
   }
 
+  const feeRows = fees.data ?? [];
+  const feePagination = usePagination(feeRows, 10);
+  const payoutPagination = usePagination(payouts.data ?? [], 10);
+
   const pendingFeeOptions = useMemo(
     () =>
       (fees.data ?? [])
@@ -346,6 +362,55 @@ export function PaymentsPage() {
       }
     >
       {confirmDialog}
+      <Sheet open={!!sheetFee} onOpenChange={(o) => !o && setSheetFee(null)}>
+        <SheetContent size="md">
+          <SheetHeader>
+            <SheetTitle>
+              {sheetFee
+                ? `${sheetFee.student.lastName}, ${sheetFee.student.firstName}`
+                : "Cuota"}
+            </SheetTitle>
+            <SheetDescription>{sheetFee?.yearMonth}</SheetDescription>
+          </SheetHeader>
+          <SheetBody>
+            {sheetFee ? (
+              <div className="space-y-3 text-sm">
+                <p>
+                  Total {formatMoney(sheetFee.totalAmount)} · Pagado{" "}
+                  {formatMoney(sheetFee.amountPaid)}
+                </p>
+                <Badge variant={feeStatusBadge(sheetFee.status)}>
+                  {FEE_STATUS_LABELS[sheetFee.status]}
+                </Badge>
+                {isAdmin ? (
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        selectFee(sheetFee);
+                        setPayOpen(true);
+                        setSheetFee(null);
+                      }}
+                    >
+                      Cobrar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setReminderFeeId(sheetFee.id);
+                        setSheetFee(null);
+                      }}
+                    >
+                      Recordatorio
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
       <FeeReminderDialog
         feeId={reminderFeeId}
         open={!!reminderFeeId}
@@ -471,7 +536,7 @@ export function PaymentsPage() {
               </DialogContent>
             </Dialog>
 
-            <DataTable>
+            <DataTable maxBodyHeight="min(42vh, 440px)">
               <DataTableHead>
                 <DataTableTh>Alumno</DataTableTh>
                 <DataTableTh>Mes</DataTableTh>
@@ -482,14 +547,14 @@ export function PaymentsPage() {
                 <DataTableTh className="w-24" />
               </DataTableHead>
               <tbody>
-                {fees.data?.map((f) => {
+                {feePagination.slice.map((f) => {
                   const pending = f.totalAmount - f.amountPaid;
                   const selected = payFeeId === f.id;
                   return (
                     <DataTableRow
                       key={f.id}
-                      className={selected ? "bg-primary/5" : undefined}
-                      onClick={() => isAdmin && selectFee(f)}
+                      className={selected || sheetFee?.id === f.id ? "bg-primary/5" : undefined}
+                      onClick={() => setSheetFee(f)}
                     >
                       <DataTableTd className="font-medium">
                         {f.student.lastName}, {f.student.firstName}
@@ -551,10 +616,20 @@ export function PaymentsPage() {
                 })}
               </tbody>
             </DataTable>
+            <TablePagination
+              page={feePagination.page}
+              totalPages={feePagination.totalPages}
+              totalItems={feePagination.totalItems}
+              pageSize={feePagination.pageSize}
+              onPageChange={feePagination.setPage}
+            />
 
             {fees.data?.some((f) => f.payments.length > 0) ? (
-              <div className="space-y-3 pt-2">
-                <p className="text-sm font-medium">Detalle de cobros en el periodo</p>
+              <CollapsibleSection
+                className="mx-4 mb-4"
+                title="Detalle de cobros en el periodo"
+                description="Expandir solo cuando necesites revisar cobros"
+              >
                 {fees.data.map((f) =>
                   f.payments.length === 0 ? null : (
                     <div key={f.id} className="rounded-lg border border-border/80 p-3 text-sm">
@@ -607,7 +682,7 @@ export function PaymentsPage() {
                     </div>
                   ),
                 )}
-              </div>
+              </CollapsibleSection>
             ) : null}
           </CardContent>
         ) : (
@@ -622,7 +697,7 @@ export function PaymentsPage() {
                 </Button>
               ) : null}
             </div>
-            <DataTable>
+            <DataTable maxBodyHeight="min(42vh, 440px)">
               <DataTableHead>
                 <DataTableTh>Profesor</DataTableTh>
                 <DataTableTh>Mes</DataTableTh>
@@ -634,7 +709,7 @@ export function PaymentsPage() {
                 <DataTableTh className="text-right">Acciones</DataTableTh>
               </DataTableHead>
               <tbody>
-                {payouts.data?.map((p) => (
+                {payoutPagination.slice.map((p) => (
                   <DataTableRow key={p.id}>
                     <DataTableTd className="font-medium">
                       {p.teacher.lastName}, {p.teacher.firstName}
@@ -704,6 +779,13 @@ export function PaymentsPage() {
                 ))}
               </tbody>
             </DataTable>
+            <TablePagination
+              page={payoutPagination.page}
+              totalPages={payoutPagination.totalPages}
+              totalItems={payoutPagination.totalItems}
+              pageSize={payoutPagination.pageSize}
+              onPageChange={payoutPagination.setPage}
+            />
           </CardContent>
         )}
       </Card>

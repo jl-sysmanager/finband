@@ -31,7 +31,7 @@ export function ListShell({
         {toolbar}
         <CardContent className={toolbar ? "p-0 pt-0" : "p-0"}>{children}</CardContent>
         {footer ? (
-          <div className="border-t border-border px-4 py-3 text-xs text-muted-foreground">{footer}</div>
+          <div className="border-t border-border text-xs text-muted-foreground">{footer}</div>
         ) : null}
       </Card>
     </div>

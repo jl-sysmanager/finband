@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { GraduationCap, Plus, Receipt, Trash2 } from "lucide-react";
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { StudentQuickPanel } from "@/components/detail/StudentQuickPanel";
 import { StudentFeeGeneratePanel } from "@/components/fees/StudentFeeGeneratePanel";
 import { ListPageLayout } from "@/components/layout/ListPageLayout";
 import { QueryState } from "@/components/layout/QueryState";
@@ -14,6 +15,7 @@ import {
 } from "@/components/list/DataTable";
 import { ListToolbar } from "@/components/list/ListToolbar";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
+import { TablePagination } from "@/components/list/TablePagination";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -23,10 +25,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { ApiError, api } from "@/lib/api";
 import { buildQuery } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 import { useConfirm } from "@/hooks/useConfirm";
+
+const PAGE_SIZE = 12;
 
 type StudentRow = {
   id: string;
@@ -40,26 +52,35 @@ type StudentRow = {
 
 export function StudentsPage() {
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [feeStudent, setFeeStudent] = useState<StudentRow | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const navigate = useNavigate();
   const qc = useQueryClient();
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
   const { confirm, dialog: confirmDialog } = useConfirm();
 
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
+
   const q = useQuery({
-    queryKey: ["students", search],
+    queryKey: ["students", search, page],
     queryFn: () =>
-      api<{ items: StudentRow[]; total: number }>(
-        `/students${buildQuery({ search: search || undefined })}`,
+      api<{ items: StudentRow[]; total: number; page: number; limit: number }>(
+        `/students${buildQuery({ search: search || undefined, page: String(page), limit: String(PAGE_SIZE) })}`,
       ),
   });
+
+  const totalPages = Math.max(1, Math.ceil((q.data?.total ?? 0) / PAGE_SIZE));
+  const selectedRow = q.data?.items.find((s) => s.id === selectedId);
 
   const remove = useMutation({
     mutationFn: (id: string) => api(`/students/${id}`, { method: "DELETE" }),
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ["students"] });
       setFeeStudent((prev) => (prev?.id === id ? null : prev));
+      if (selectedId === id) setSelectedId(null);
       setDeleteError(null);
     },
   });
@@ -89,6 +110,20 @@ export function StudentsPage() {
           <AlertDescription>{deleteError}</AlertDescription>
         </Alert>
       ) : null}
+
+      <Sheet open={!!selectedId} onOpenChange={(o) => !o && setSelectedId(null)}>
+        <SheetContent size="lg">
+          <SheetHeader>
+            <SheetTitle>
+              {selectedRow
+                ? `${selectedRow.lastName}, ${selectedRow.firstName}`
+                : "Alumno"}
+            </SheetTitle>
+            <SheetDescription>Vista rápida · sin salir del listado</SheetDescription>
+          </SheetHeader>
+          <SheetBody>{selectedId ? <StudentQuickPanel studentId={selectedId} /> : null}</SheetBody>
+        </SheetContent>
+      </Sheet>
 
       <Dialog open={!!feeStudent} onOpenChange={(o) => !o && setFeeStudent(null)}>
         <DialogContent size="md">
@@ -125,7 +160,17 @@ export function StudentsPage() {
             searchPlaceholder="Buscar por nombre o email…"
           />
         }
-        footer={q.data ? `${q.data.items.length} filas mostradas` : undefined}
+        footer={
+          q.data ? (
+            <TablePagination
+              page={page}
+              totalPages={totalPages}
+              totalItems={q.data.total}
+              pageSize={PAGE_SIZE}
+              onPageChange={setPage}
+            />
+          ) : undefined
+        }
       >
         <QueryState
           query={q}
@@ -142,7 +187,7 @@ export function StudentsPage() {
           }
         >
           {(data) => (
-            <DataTable>
+            <DataTable maxBodyHeight="min(52vh, 520px)">
               <DataTableHead>
                 <DataTableTh>Nombre</DataTableTh>
                 <DataTableTh>Instrumento</DataTableTh>
@@ -153,7 +198,11 @@ export function StudentsPage() {
               </DataTableHead>
               <tbody>
                 {data.items.map((s) => (
-                  <DataTableRow key={s.id} onClick={() => navigate(`/alumnos/${s.id}`)}>
+                  <DataTableRow
+                    key={s.id}
+                    className={selectedId === s.id ? "bg-primary/5" : undefined}
+                    onClick={() => setSelectedId(s.id)}
+                  >
                     <DataTableTd className="font-medium">
                       {s.lastName}, {s.firstName}
                     </DataTableTd>

@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from "@finband/shared";
 import { Plus, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { TablePagination } from "@/components/list/TablePagination";
+import { usePagination } from "@/hooks/usePagination";
 import { FormSelect } from "@/components/form/FormSelect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,6 +82,12 @@ export function FinancePage({ mode }: FinanceProps) {
         (e.notes?.toLowerCase().includes(s) ?? false),
     );
   }, [entries.data, search]);
+
+  const pagination = usePagination(filteredEntries, 12);
+
+  useEffect(() => {
+    pagination.setPage(1);
+  }, [search, from, to, mode]);
 
   const categories = useQuery({
     queryKey: [isIncome ? "income-categories" : "expense-categories"],
@@ -291,11 +299,20 @@ export function FinancePage({ mode }: FinanceProps) {
             </FilterField>
           </ListToolbar>
         }
+        footer={
+          <TablePagination
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            totalItems={pagination.totalItems}
+            pageSize={pagination.pageSize}
+            onPageChange={pagination.setPage}
+          />
+        }
       >
         <QueryState query={entries} empty={!(entries.data?.length ?? 0)}>
           {() => (
           <div className="px-1 pb-4 pt-2">
-          <DataTable>
+          <DataTable maxBodyHeight="min(48vh, 480px)">
             <DataTableHead>
               <DataTableTh>Fecha</DataTableTh>
               <DataTableTh>Concepto</DataTableTh>
@@ -305,7 +322,7 @@ export function FinancePage({ mode }: FinanceProps) {
               {isAdmin ? <DataTableTh className="w-14" /> : null}
             </DataTableHead>
             <tbody>
-              {filteredEntries.map((e) => (
+              {pagination.slice.map((e) => (
                 <DataTableRow key={e.id} onClick={() => isAdmin && openForm(e)}>
                   <DataTableTd>{formatDate(e.date)}</DataTableTd>
                   <DataTableTd>{e.concept}</DataTableTd>
