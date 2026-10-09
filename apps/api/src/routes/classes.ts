@@ -16,6 +16,7 @@ import {
   replaceScheduleSlots,
   type ScheduleSlotInput,
 } from "../lib/schedule.js";
+import { recordAudit } from "../lib/audit.js";
 import { prisma } from "../lib/prisma.js";
 
 function stripSlots(data: Record<string, unknown>) {
@@ -217,7 +218,14 @@ export async function classRoutes(app: FastifyInstance) {
 
   app.delete("/:id", async (request) => {
     const { id } = request.params as { id: string };
+    const existing = await prisma.classGroup.findUnique({ where: { id } });
     await prisma.classGroup.delete({ where: { id } });
+    await recordAudit(request, {
+      action: "DELETE",
+      entityType: "class_group",
+      entityId: id,
+      details: existing ? { name: existing.name } : null,
+    });
     return { ok: true };
   });
 

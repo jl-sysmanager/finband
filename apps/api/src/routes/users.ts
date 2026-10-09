@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import type { FastifyInstance } from "fastify";
 import { userCreateSchema, userUpdateSchema } from "@finband/shared";
 import type { UserRole } from "@prisma/client";
+import { recordAudit } from "../lib/audit.js";
 import { prisma } from "../lib/prisma.js";
 
 export async function userRoutes(app: FastifyInstance) {
@@ -69,7 +70,14 @@ export async function userRoutes(app: FastifyInstance) {
     if (id === request.user.sub) {
       return reply.status(400).send({ error: "No puedes eliminar tu usuario" });
     }
+    const user = await prisma.user.findUnique({ where: { id } });
     await prisma.user.delete({ where: { id } });
+    await recordAudit(request, {
+      action: "DELETE",
+      entityType: "user",
+      entityId: id,
+      details: user ? { username: user.username } : null,
+    });
     return { ok: true };
   });
 }

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { teacherSchema } from "@finband/shared";
+import { recordAudit } from "../lib/audit.js";
 import { prisma } from "../lib/prisma.js";
 
 export async function teacherRoutes(app: FastifyInstance) {
@@ -66,9 +67,16 @@ export async function teacherRoutes(app: FastifyInstance) {
 
   app.delete("/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const existing = await prisma.teacher.findUnique({ where: { id } });
     await prisma.teacher.update({
       where: { id },
       data: { deletedAt: new Date() },
+    });
+    await recordAudit(request, {
+      action: "SOFT_DELETE",
+      entityType: "teacher",
+      entityId: id,
+      details: existing ? { name: `${existing.firstName} ${existing.lastName}` } : null,
     });
     return { ok: true };
   });

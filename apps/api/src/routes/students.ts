@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { generateMonthSchema, studentDiscountSchema, studentSchema } from "@finband/shared";
 import { calculateStudentMonthlyFee, generateFeeForStudent } from "../lib/tariffs.js";
+import { recordAudit } from "../lib/audit.js";
 import { prisma } from "../lib/prisma.js";
 
 export async function studentRoutes(app: FastifyInstance) {
@@ -92,6 +93,12 @@ export async function studentRoutes(app: FastifyInstance) {
     await prisma.student.update({
       where: { id },
       data: { deletedAt: new Date(), status: "INACTIVE" },
+    });
+    await recordAudit(request, {
+      action: "SOFT_DELETE",
+      entityType: "student",
+      entityId: id,
+      details: { name: `${existing.firstName} ${existing.lastName}` },
     });
     return { ok: true };
   });

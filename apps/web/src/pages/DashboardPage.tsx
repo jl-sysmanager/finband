@@ -1,6 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { GraduationCap, Receipt, Wallet } from "lucide-react";
+import { GraduationCap, Layers, Receipt, Wallet } from "lucide-react";
+import { useState } from "react";
+import { BulkFeeGenerateDialog } from "@/components/fees/BulkFeeGenerateDialog";
+import { useAuth } from "@/stores/auth";
+import { currentYearMonth } from "@/lib/utils";
 import {
   Bar,
   BarChart,
@@ -37,7 +41,24 @@ type Summary = {
   pendingTeacherPay: number;
 };
 
+type ActionItems = {
+  yearMonth: string;
+  studentsWithoutFee: { count: number; items: Array<{ studentId: string; studentName: string }> };
+  unpaidFees: {
+    count: number;
+    totalPending: number;
+    items: Array<{ id: string; studentName: string; pending: number }>;
+  };
+  pendingPayouts: { count: number; totalPending: number };
+  studentsWithoutTeacher: { count: number };
+  classesWithoutSchedule: { count: number };
+};
+
 export function DashboardPage() {
+  const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const ym = currentYearMonth();
+
   const summary = useQuery({
     queryKey: ["dashboard-summary"],
     queryFn: () => api<Summary>("/dashboard/summary"),
@@ -73,12 +94,21 @@ export function DashboardPage() {
         }>
       >("/dashboard/upcoming-due"),
   });
+  const actions = useQuery({
+    queryKey: ["dashboard-action-items", ym],
+    queryFn: () => api<ActionItems>(`/dashboard/action-items?yearMonth=${ym}`),
+  });
 
   const s = summary.data;
   const loading = summary.isLoading;
 
+  const a = actions.data;
+
   return (
-    <div className="page-container">
+    <div className="page-container space-y-6">
+      {isAdmin ? (
+        <BulkFeeGenerateDialog open={bulkOpen} onOpenChange={setBulkOpen} defaultMonth={ym} />
+      ) : null}
       <PageHeader
         title="Dashboard"
         description="Resumen del centro educativo"
@@ -94,14 +124,63 @@ export function DashboardPage() {
                 <Receipt className="h-4 w-4" /> Impagos
               </Link>
             </Button>
+            {isAdmin ? (
+              <Button variant="outline" size="sm" onClick={() => setBulkOpen(true)}>
+                <Layers className="h-4 w-4" /> Cuotas del mes
+              </Button>
+            ) : null}
             <Button variant="outline" size="sm" asChild>
               <Link to="/tarifas">
-                <GraduationCap className="h-4 w-4" /> Cuotas
+                <GraduationCap className="h-4 w-4" /> Tarifas
               </Link>
             </Button>
           </div>
         }
       />
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Acciones pendientes ({ym})</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {actions.isLoading ? (
+            <Skeleton className="h-20 md:col-span-2" />
+          ) : (
+            <>
+              <ActionTile
+                title="Alumnos sin cuota"
+                count={a?.studentsWithoutFee.count ?? 0}
+                hint="Emitir cuotas masivas"
+                to="/pagos"
+                onAction={isAdmin ? () => setBulkOpen(true) : undefined}
+                actionLabel="Generar"
+              />
+              <ActionTile
+                title="Impagos"
+                count={a?.unpaidFees.count ?? 0}
+                hint={formatMoney(a?.unpaidFees.totalPending ?? 0)}
+                to="/pagos"
+              />
+              <ActionTile
+                title="Liquidaciones profesores"
+                count={a?.pendingPayouts.count ?? 0}
+                hint={formatMoney(a?.pendingPayouts.totalPending ?? 0)}
+                to="/pagos"
+              />
+              <ActionTile
+                title="Alumnos sin profesor"
+                count={a?.studentsWithoutTeacher.count ?? 0}
+                to="/alumnos"
+              />
+              <ActionTile
+                title="Clases sin horario"
+                count={a?.classesWithoutSchedule.count ?? 0}
+                to="/clases"
+              />
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       <div>
         <h2 className="mb-3 text-sm font-medium text-muted-foreground">Centro</h2>
@@ -217,6 +296,40 @@ export function DashboardPage() {
           </DataTable>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function ActionTile({
+  title,
+  count,
+  hint,
+  to,
+  onAction,
+  actionLabel,
+}: {
+  title: string;
+  count: number;
+  hint?: string;
+  to: string;
+  onAction?: () => void;
+  actionLabel?: string;
+}) {
+  return (
+    <div className="rounded-lg border border-border/80 p-3">
+      <p className="text-sm font-medium">{title}</p>
+      <p className="text-2xl font-semibold tabular-nums">{count}</p>
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" asChild>
+          <Link to={to}>Ver</Link>
+        </Button>
+        {onAction && count > 0 ? (
+          <Button size="sm" onClick={onAction}>
+            {actionLabel}
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }

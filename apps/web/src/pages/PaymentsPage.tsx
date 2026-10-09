@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FEE_STATUS_LABELS, PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from "@finband/shared";
-import { FileText, Trash2 } from "lucide-react";
+import { Bell, FileText, Layers, Trash2 } from "lucide-react";
+import { BulkFeeGenerateDialog } from "@/components/fees/BulkFeeGenerateDialog";
+import { FeeReminderDialog } from "@/components/fees/FeeReminderDialog";
 import { useMemo, useState } from "react";
 import { FormSelect } from "@/components/form/FormSelect";
 import { MonthSelect } from "@/components/form/MonthSelect";
@@ -105,6 +107,8 @@ export function PaymentsPage() {
   const [payMethod, setPayMethod] = useState("EFECTIVO");
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [payOpen, setPayOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [reminderFeeId, setReminderFeeId] = useState<string | null>(null);
   const { confirm, dialog: confirmDialog } = useConfirm();
 
   const feeQuery = buildQuery({
@@ -325,9 +329,24 @@ export function PaymentsPage() {
   return (
     <div className="page-container space-y-4">
       {confirmDialog}
+      <FeeReminderDialog
+        feeId={reminderFeeId}
+        open={!!reminderFeeId}
+        onOpenChange={(o) => !o && setReminderFeeId(null)}
+      />
+      {isAdmin ? (
+        <BulkFeeGenerateDialog open={bulkOpen} onOpenChange={setBulkOpen} defaultMonth={monthTo} />
+      ) : null}
       <PageHeader
         title="Control de pagos"
         description="Cobros de alumnos y liquidaciones a profesores"
+        actions={
+          isAdmin ? (
+            <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)}>
+              <Layers className="h-4 w-4" /> Cuotas del mes
+            </Button>
+          ) : undefined
+        }
       />
 
       {deleteError ? (
@@ -482,17 +501,30 @@ export function PaymentsPage() {
                       <DataTableTd className="text-right">
                         <div className="flex justify-end gap-1">
                           {isAdmin && pending > 0 ? (
-                            <Button
-                              size="sm"
-                              variant={selected ? "default" : "outline"}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                selectFee(f);
-                                setPayOpen(true);
-                              }}
-                            >
-                              Cobrar
-                            </Button>
+                            <>
+                              <Button
+                                size="sm"
+                                variant={selected ? "default" : "outline"}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  selectFee(f);
+                                  setPayOpen(true);
+                                }}
+                              >
+                                Cobrar
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                aria-label="Recordatorio"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setReminderFeeId(f.id);
+                                }}
+                              >
+                                <Bell className="h-4 w-4" />
+                              </Button>
+                            </>
                           ) : null}
                           {isAdmin ? (
                             <Button

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { expenseEntrySchema, incomeEntrySchema } from "@finband/shared";
+import { recordAudit } from "../lib/audit.js";
 import { prisma } from "../lib/prisma.js";
 
 export async function financeRoutes(app: FastifyInstance) {
@@ -56,6 +57,7 @@ export async function financeRoutes(app: FastifyInstance) {
   app.delete("/incomes/:id", async (request) => {
     const { id } = request.params as { id: string };
     await prisma.incomeEntry.delete({ where: { id } });
+    await recordAudit(request, { action: "DELETE", entityType: "income", entityId: id });
     return { ok: true };
   });
 
@@ -111,6 +113,7 @@ export async function financeRoutes(app: FastifyInstance) {
   app.delete("/expenses/:id", async (request) => {
     const { id } = request.params as { id: string };
     await prisma.expenseEntry.delete({ where: { id } });
+    await recordAudit(request, { action: "DELETE", entityType: "expense", entityId: id });
     return { ok: true };
   });
 }
