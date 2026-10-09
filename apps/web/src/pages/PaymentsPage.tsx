@@ -16,7 +16,8 @@ import {
 import { useConfirm } from "@/hooks/useConfirm";
 import { FilterField } from "@/components/list/FilterField";
 import { ListToolbar } from "@/components/list/ListToolbar";
-import { PageHeader } from "@/components/list/PageHeader";
+import { WorkspaceShell } from "@/components/layout/PageShell";
+import { MobileBottomBar } from "@/components/layout/MobileBottomBar";
 import { SegmentedControl } from "@/components/layout/SegmentedControl";
 import { feeStatusBadge } from "@/components/ui/badge";
 import {
@@ -327,7 +328,23 @@ export function PaymentsPage() {
   }
 
   return (
-    <div className="page-container space-y-4">
+    <WorkspaceShell
+      className="pb-24 md:pb-0"
+      title="Control de pagos"
+      description="Cobros de alumnos y liquidaciones a profesores"
+      actions={
+        isAdmin ? (
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => setPayOpen(true)}>
+              Registrar cobro
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)}>
+              <Layers className="h-4 w-4" /> Cuotas del mes
+            </Button>
+          </div>
+        ) : undefined
+      }
+    >
       {confirmDialog}
       <FeeReminderDialog
         feeId={reminderFeeId}
@@ -337,18 +354,6 @@ export function PaymentsPage() {
       {isAdmin ? (
         <BulkFeeGenerateDialog open={bulkOpen} onOpenChange={setBulkOpen} defaultMonth={monthTo} />
       ) : null}
-      <PageHeader
-        title="Control de pagos"
-        description="Cobros de alumnos y liquidaciones a profesores"
-        actions={
-          isAdmin ? (
-            <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)}>
-              <Layers className="h-4 w-4" /> Cuotas del mes
-            </Button>
-          ) : undefined
-        }
-      />
-
       {deleteError ? (
         <Alert variant="destructive">
           <AlertDescription>{deleteError}</AlertDescription>
@@ -702,6 +707,13 @@ export function PaymentsPage() {
           </CardContent>
         )}
       </Card>
-    </div>
+      {isAdmin ? (
+        <MobileBottomBar>
+          <Button className="flex-1" size="sm" onClick={() => setPayOpen(true)}>
+            Registrar cobro
+          </Button>
+        </MobileBottomBar>
+      ) : null}
+    </WorkspaceShell>
   );
 }

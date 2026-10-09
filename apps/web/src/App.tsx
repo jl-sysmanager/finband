@@ -18,6 +18,7 @@ import { TeacherDetailPage } from "@/pages/TeacherDetailPage";
 import { TeachersPage } from "@/pages/TeachersPage";
 import { useAuth } from "@/stores/auth";
 import { useTheme } from "@/stores/theme";
+import { Toaster } from "@/components/feedback/Toaster";
 
 const queryClient = new QueryClient();
 
@@ -36,6 +37,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <AuthBootstrap>
+          <Toaster />
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route element={<ProtectedRoute />}>

@@ -14,7 +14,7 @@ import {
   DataTableTh,
 } from "@/components/list/DataTable";
 import { ListToolbar } from "@/components/list/ListToolbar";
-import { PageHeader } from "@/components/list/PageHeader";
+import { WorkspaceShell } from "@/components/layout/PageShell";
 import { SegmentedControl } from "@/components/layout/SegmentedControl";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -144,31 +144,30 @@ export function ClassesPage() {
   const suspended = items.filter((o) => o.cancelled);
 
   return (
-    <div className="page-container space-y-4">
+    <WorkspaceShell
+      title="Clases"
+      description={`${q.data?.length ?? 0} grupos`}
+      actions={
+        <div className="flex flex-wrap items-center gap-2">
+          <SegmentedControl
+            value={view}
+            onChange={setView}
+            options={[
+              { value: "list", label: "Listado" },
+              { value: "calendar", label: "Calendario" },
+            ]}
+          />
+          {isAdmin ? (
+            <Button asChild size="sm">
+              <Link to="/clases/nueva">
+                <Plus className="h-4 w-4" /> Nueva clase
+              </Link>
+            </Button>
+          ) : null}
+        </div>
+      }
+    >
       {confirmDialog}
-      <PageHeader
-        title="Clases"
-        description={`${q.data?.length ?? 0} grupos`}
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <SegmentedControl
-              value={view}
-              onChange={setView}
-              options={[
-                { value: "list", label: "Listado" },
-                { value: "calendar", label: "Calendario" },
-              ]}
-            />
-            {isAdmin ? (
-              <Button asChild>
-                <Link to="/clases/nueva">
-                  <Plus className="h-4 w-4" /> Nueva clase
-                </Link>
-              </Button>
-            ) : null}
-          </div>
-        }
-      />
 
       {deleteError ? (
         <Alert variant="destructive">
@@ -314,6 +313,6 @@ export function ClassesPage() {
           </CardContent>
         )}
       </Card>
-    </div>
+    </WorkspaceShell>
   );
 }

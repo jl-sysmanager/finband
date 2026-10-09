@@ -10,7 +10,8 @@ import {
   DataTableTd,
   DataTableTh,
 } from "@/components/list/DataTable";
-import { PageHeader } from "@/components/list/PageHeader";
+import { WorkspaceShell } from "@/components/layout/PageShell";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ApiError, api, downloadUrl, uploadBackup } from "@/lib/api";
 import { FormSelect } from "@/components/form/FormSelect";
 import {
@@ -161,9 +162,16 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="page-container space-y-6">
+    <WorkspaceShell title="Configuración" description="Centro, usuarios, copias y auditoría">
       {confirmDialog}
-      <PageHeader title="Configuración del centro" description="Datos del centro y usuarios de acceso" />
+      <Tabs defaultValue="centro" className="w-full">
+        <TabsList className="mb-4 flex h-auto w-full flex-wrap justify-start">
+          <TabsTrigger value="centro">Centro</TabsTrigger>
+          {isAdmin ? <TabsTrigger value="usuarios">Usuarios</TabsTrigger> : null}
+          {isAdmin ? <TabsTrigger value="copias">Copias</TabsTrigger> : null}
+          {isAdmin ? <TabsTrigger value="auditoria">Auditoría</TabsTrigger> : null}
+        </TabsList>
+        <TabsContent value="centro" className="space-y-6">
 
       <form key={`school-${school.dataUpdatedAt}`} onSubmit={onSchoolSubmit}>
         <Card>
@@ -212,8 +220,10 @@ export function SettingsPage() {
           </Button>
         ) : null}
       </form>
+        </TabsContent>
 
-      {isAdmin ? (
+        {isAdmin ? (
+        <TabsContent value="copias">
         <Card>
           <CardHeader>
             <CardTitle>Copia de seguridad</CardTitle>
@@ -281,9 +291,11 @@ export function SettingsPage() {
             {backupOk ? <p className="text-income">{backupOk}</p> : null}
           </CardContent>
         </Card>
-      ) : null}
+        </TabsContent>
+        ) : null}
 
-      {isAdmin ? (
+        {isAdmin ? (
+        <TabsContent value="usuarios">
         <Card>
           <CardHeader>
             <CardTitle>Usuarios</CardTitle>
@@ -381,9 +393,11 @@ export function SettingsPage() {
             {userError ? <p className="text-sm text-destructive">{userError}</p> : null}
           </CardContent>
         </Card>
-      ) : null}
+        </TabsContent>
+        ) : null}
 
-      {isAdmin ? (
+        {isAdmin ? (
+        <TabsContent value="auditoria">
         <Card>
           <CardHeader>
             <CardTitle>Registro de auditoría</CardTitle>
@@ -392,8 +406,10 @@ export function SettingsPage() {
             <AuditLogTable />
           </CardContent>
         </Card>
-      ) : null}
-    </div>
+        </TabsContent>
+        ) : null}
+      </Tabs>
+    </WorkspaceShell>
   );
 }
 

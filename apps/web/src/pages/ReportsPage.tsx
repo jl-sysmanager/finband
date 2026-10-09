@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Eye, FileDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { FilterField } from "@/components/list/FilterField";
-import { PageHeader } from "@/components/list/PageHeader";
+import { WorkspaceShell } from "@/components/layout/PageShell";
 import {
   DataTable,
   DataTableHead,
@@ -518,12 +518,10 @@ export function ReportsPage() {
   }, [pdfFetchUrl]);
 
   return (
-    <div className="page-container space-y-4">
-      <PageHeader
-        title="Informes"
-        description="Previsualiza los datos antes de exportar a PDF o Excel"
-      />
-
+    <WorkspaceShell
+      title="Informes"
+      description="Previsualiza los datos antes de exportar a PDF o Excel"
+    >
       <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
         <Card>
           <CardHeader>
@@ -608,6 +606,6 @@ export function ReportsPage() {
           </Card>
         </div>
       </div>
-    </div>
+    </WorkspaceShell>
   );
 }
