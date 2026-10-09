@@ -12,17 +12,23 @@ import {
   CircleDollarSign,
 } from "lucide-react";
 
-export type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean };
+export type NavItem = {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  end?: boolean;
+  adminOnly?: boolean;
+};
 
 export type NavGroup = { label: string; items: NavItem[] };
 
-export const navGroups: NavGroup[] = [
+const allGroups: NavGroup[] = [
   {
     label: "Resumen",
     items: [{ to: "/", label: "Dashboard", icon: LayoutDashboard, end: true }],
   },
   {
-    label: "Personas",
+    label: "Centro educativo",
     items: [
       { to: "/alumnos", label: "Alumnos", icon: GraduationCap },
       { to: "/profesores", label: "Profesores", icon: Users },
@@ -44,8 +50,20 @@ export const navGroups: NavGroup[] = [
   },
   {
     label: "Sistema",
-    items: [{ to: "/configuracion", label: "Configuración", icon: Settings }],
+    items: [{ to: "/configuracion", label: "Configuración", icon: Settings, adminOnly: true }],
   },
 ];
 
-export const allNavItems = navGroups.flatMap((g) => g.items);
+export function navGroupsForUser(isAdmin: boolean): NavGroup[] {
+  return allGroups
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((i) => isAdmin || !i.adminOnly),
+    }))
+    .filter((g) => g.items.length > 0);
+}
+
+/** @deprecated use navGroupsForUser */
+export const navGroups = allGroups;
+
+export const allNavItems = allGroups.flatMap((g) => g.items);

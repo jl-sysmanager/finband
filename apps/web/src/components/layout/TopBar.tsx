@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { Button } from "@/components/ui/button";
-import { buildBreadcrumbs, routeTitle } from "@/lib/route-meta";
+import { buildBreadcrumbs, isDetailRoute, routeTitle } from "@/lib/route-meta";
 import { useAuth } from "@/stores/auth";
 import { usePageTitle } from "@/stores/page-title";
 import { useTheme } from "@/stores/theme";
@@ -17,9 +17,8 @@ export function TopBar() {
 
   const title = routeTitle(pathname, dynamicTitle);
   const crumbs = buildBreadcrumbs(pathname, dynamicTitle);
-  const isDetailRoute =
-    /^\/(alumnos|profesores|clases)\/[^/]+/.test(pathname) && !pathname.endsWith("/nuevo");
-  const showTopTitle = isDetailRoute || !!dynamicTitle;
+  const detail = isDetailRoute(pathname);
+  const showTopTitle = detail || !!dynamicTitle;
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">

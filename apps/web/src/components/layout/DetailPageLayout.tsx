@@ -43,7 +43,7 @@ export function DetailPageLayout({
             </Link>
           </Button>
           <div>
-            <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
+            <h2 className="text-xl font-semibold tracking-tight md:text-2xl">{title}</h2>
             {subtitle ? <div className="mt-1 text-sm text-muted-foreground">{subtitle}</div> : null}
           </div>
         </div>

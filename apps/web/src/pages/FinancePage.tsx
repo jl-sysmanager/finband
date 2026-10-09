@@ -4,7 +4,6 @@ import { Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { FormSelect } from "@/components/form/FormSelect";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -16,7 +15,8 @@ import {
 } from "@/components/ui/dialog";
 import { FilterField } from "@/components/list/FilterField";
 import { ListToolbar } from "@/components/list/ListToolbar";
-import { PageHeader } from "@/components/list/PageHeader";
+import { ListShell } from "@/components/layout/PageShell";
+import { QueryState } from "@/components/layout/QueryState";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import {
   DataTable,
@@ -30,6 +30,7 @@ import { buildQuery, firstDayOfCurrentMonthISO, formatDate, formatMoney, todayIS
 import { useAuth } from "@/stores/auth";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useConfirm } from "@/hooks/useConfirm";
+import { toast } from "@/stores/toast";
 
 type FinanceProps = { mode: "incomes" | "expenses" };
 
@@ -105,6 +106,7 @@ export function FinancePage({ mode }: FinanceProps) {
       qc.invalidateQueries({ queryKey: [mode] });
       setFormOpen(false);
       setEditing(null);
+      toast("Movimiento guardado", "success");
     },
   });
 
@@ -181,21 +183,10 @@ export function FinancePage({ mode }: FinanceProps) {
   ];
 
   return (
-    <div className="page-container space-y-4">
+    <>
       {confirmDialog}
-      <PageHeader
-        title={isIncome ? "Ingresos" : "Gastos"}
-        description={`${filteredEntries.length} movimientos en el periodo`}
-        actions={
-          isAdmin ? (
-            <Button size="sm" onClick={() => openForm()} disabled={!categories.isSuccess}>
-              <Plus className="h-4 w-4" /> Nuevo movimiento
-            </Button>
-          ) : null
-        }
-      />
       {deleteError ? (
-        <Alert variant="destructive">
+        <Alert variant="destructive" className="page-container">
           <AlertDescription>{deleteError}</AlertDescription>
         </Alert>
       ) : null}
@@ -280,16 +271,30 @@ export function FinancePage({ mode }: FinanceProps) {
         </DialogContent>
       </Dialog>
 
-      <Card className="overflow-hidden">
-        <ListToolbar search={search} onSearchChange={setSearch} searchPlaceholder="Buscar concepto o categoría…">
-          <FilterField label="Desde">
-            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-          </FilterField>
-          <FilterField label="Hasta">
-            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-          </FilterField>
-        </ListToolbar>
-        <CardContent className="pt-4">
+      <ListShell
+        title={isIncome ? "Ingresos" : "Gastos"}
+        description={`${filteredEntries.length} movimientos en el periodo`}
+        actions={
+          isAdmin ? (
+            <Button size="sm" onClick={() => openForm()} disabled={!categories.isSuccess}>
+              <Plus className="h-4 w-4" /> Nuevo movimiento
+            </Button>
+          ) : null
+        }
+        toolbar={
+          <ListToolbar search={search} onSearchChange={setSearch} searchPlaceholder="Buscar concepto o categoría…">
+            <FilterField label="Desde">
+              <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            </FilterField>
+            <FilterField label="Hasta">
+              <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+            </FilterField>
+          </ListToolbar>
+        }
+      >
+        <QueryState query={entries} empty={!(entries.data?.length ?? 0)}>
+          {() => (
+          <div className="px-1 pb-4 pt-2">
           <DataTable>
             <DataTableHead>
               <DataTableTh>Fecha</DataTableTh>
@@ -335,8 +340,10 @@ export function FinancePage({ mode }: FinanceProps) {
               ))}
             </tbody>
           </DataTable>
-        </CardContent>
-      </Card>
-    </div>
+          </div>
+          )}
+        </QueryState>
+      </ListShell>
+    </>
   );
 }

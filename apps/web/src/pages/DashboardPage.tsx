@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { GraduationCap, Layers, Receipt, Wallet } from "lucide-react";
+import { Layers, Receipt, Wallet } from "lucide-react";
 import { useState } from "react";
 import { BulkFeeGenerateDialog } from "@/components/fees/BulkFeeGenerateDialog";
 import { useAuth } from "@/stores/auth";
@@ -15,7 +15,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { PageHeader } from "@/components/list/PageHeader";
+import { MonthCloseWizard } from "@/components/dashboard/MonthCloseWizard";
+import { WorkspaceShell } from "@/components/layout/PageShell";
 import { StatCard } from "@/components/layout/StatCard";
 import {
   DataTable,
@@ -57,6 +58,7 @@ type ActionItems = {
 export function DashboardPage() {
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [closeOpen, setCloseOpen] = useState(false);
   const ym = currentYearMonth();
 
   const summary = useQuery({
@@ -105,38 +107,40 @@ export function DashboardPage() {
   const a = actions.data;
 
   return (
-    <div className="page-container space-y-6">
+    <WorkspaceShell
+      title="Dashboard"
+      description="Resumen del centro educativo"
+      actions={
+        <div className="flex flex-wrap gap-2">
+          {isAdmin ? (
+            <Button size="sm" variant="accent" onClick={() => setCloseOpen(true)}>
+              Cierre del mes
+            </Button>
+          ) : null}
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/pagos">
+              <Wallet className="h-4 w-4" /> Registrar cobro
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/informes">
+              <Receipt className="h-4 w-4" /> Informes
+            </Link>
+          </Button>
+          {isAdmin ? (
+            <Button variant="outline" size="sm" onClick={() => setBulkOpen(true)}>
+              <Layers className="h-4 w-4" /> Cuotas del mes
+            </Button>
+          ) : null}
+        </div>
+      }
+    >
       {isAdmin ? (
-        <BulkFeeGenerateDialog open={bulkOpen} onOpenChange={setBulkOpen} defaultMonth={ym} />
+        <>
+          <BulkFeeGenerateDialog open={bulkOpen} onOpenChange={setBulkOpen} defaultMonth={ym} />
+          <MonthCloseWizard open={closeOpen} onOpenChange={setCloseOpen} />
+        </>
       ) : null}
-      <PageHeader
-        title="Dashboard"
-        description="Resumen del centro educativo"
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/pagos">
-                <Wallet className="h-4 w-4" /> Registrar cobro
-              </Link>
-            </Button>
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/informes">
-                <Receipt className="h-4 w-4" /> Impagos
-              </Link>
-            </Button>
-            {isAdmin ? (
-              <Button variant="outline" size="sm" onClick={() => setBulkOpen(true)}>
-                <Layers className="h-4 w-4" /> Cuotas del mes
-              </Button>
-            ) : null}
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/tarifas">
-                <GraduationCap className="h-4 w-4" /> Tarifas
-              </Link>
-            </Button>
-          </div>
-        }
-      />
 
       <Card>
         <CardHeader className="pb-2">
@@ -296,7 +300,7 @@ export function DashboardPage() {
           </DataTable>
         </CardContent>
       </Card>
-    </div>
+    </WorkspaceShell>
   );
 }
 

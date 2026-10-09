@@ -23,7 +23,8 @@ import {
 } from "@/components/list/DataTable";
 import { ListToolbar } from "@/components/list/ListToolbar";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
-import { PageHeader } from "@/components/list/PageHeader";
+import { ListShell } from "@/components/layout/PageShell";
+import { QueryState } from "@/components/layout/QueryState";
 import { ApiError, api } from "@/lib/api";
 import { formatMoney } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
@@ -154,22 +155,10 @@ export function TariffsPage() {
   ];
 
   return (
-    <div className="page-container space-y-4">
+    <>
       {confirmDialog}
-      <PageHeader
-        title="Tarifas"
-        description={`${filteredRules.length} reglas · La generación de cuotas se hace desde cada alumno`}
-        actions={
-          isAdmin ? (
-            <Button size="sm" onClick={() => openForm()}>
-              <Plus className="h-4 w-4" /> Nueva tarifa
-            </Button>
-          ) : null
-        }
-      />
-
       {deleteError ? (
-        <Alert variant="destructive">
+        <Alert variant="destructive" className="page-container">
           <AlertDescription>{deleteError}</AlertDescription>
         </Alert>
       ) : null}
@@ -223,13 +212,38 @@ export function TariffsPage() {
         </DialogContent>
       </Dialog>
 
-      <Card className="overflow-hidden">
-        <ListToolbar
-          search={search}
-          onSearchChange={setSearch}
-          searchPlaceholder="Buscar tarifa, instrumento o nivel…"
-        />
-        <CardContent className="pt-4">
+      <ListShell
+        title="Tarifas"
+        description={`${filteredRules.length} reglas`}
+        actions={
+          isAdmin ? (
+            <Button size="sm" onClick={() => openForm()}>
+              <Plus className="h-4 w-4" /> Nueva tarifa
+            </Button>
+          ) : null
+        }
+        toolbar={
+          <ListToolbar
+            search={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Buscar tarifa, instrumento o nivel…"
+          />
+        }
+      >
+        <QueryState
+          query={rules}
+          empty={!(rules.data?.length ?? 0)}
+          emptyDescription="Crea la primera regla de precio."
+          emptyAction={
+            isAdmin ? (
+              <Button size="sm" onClick={() => openForm()}>
+                Nueva tarifa
+              </Button>
+            ) : undefined
+          }
+        >
+          {() => (
+          <div className="px-1 pb-4 pt-2">
           <DataTable>
             <DataTableHead>
               <DataTableTh>Nombre</DataTableTh>
@@ -259,8 +273,10 @@ export function TariffsPage() {
               ))}
             </tbody>
           </DataTable>
-        </CardContent>
-      </Card>
-    </div>
+          </div>
+          )}
+        </QueryState>
+      </ListShell>
+    </>
   );
 }
