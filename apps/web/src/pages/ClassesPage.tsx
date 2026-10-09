@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
+import { ClassQuickPanel } from "@/components/detail/ClassQuickPanel";
+import { EntityDetailSheet } from "@/components/layout/EntityDetailSheet";
 import { CLASS_TYPE_LABELS, weekdayLabel, type ClassType } from "@finband/shared";
 import {
   WeeklyCalendarGrid,
@@ -22,15 +24,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ApiError, api } from "@/lib/api";
 import { addDaysIso, buildQuery, mondayOfWeek, todayISO } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
-import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import { useConfirm } from "@/hooks/useConfirm";
-import { ChevronLeft, ChevronRight, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, RotateCcw } from "lucide-react";
 
 export function ClassesPage() {
-  const [view, setView] = useState<"list" | "calendar">("list");
+  const [view, setView] = useState<"list" | "calendar">("calendar");
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [weekAnchor, setWeekAnchor] = useState(todayISO());
-  const navigate = useNavigate();
   const qc = useQueryClient();
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
   const { confirm, dialog: confirmDialog } = useConfirm();
@@ -38,8 +39,6 @@ export function ClassesPage() {
   const weekStart = useMemo(() => mondayOfWeek(weekAnchor), [weekAnchor]);
   const weekEnd = useMemo(() => addDaysIso(weekStart, 6), [weekStart]);
   const [calendarError, setCalendarError] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-
   const q = useQuery({
     queryKey: ["classes", search],
     queryFn: () =>
@@ -103,32 +102,6 @@ export function ClassesPage() {
     },
   });
 
-  const remove = useMutation({
-    mutationFn: (id: string) => api(`/classes/${id}`, { method: "DELETE" }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["classes"] });
-      qc.invalidateQueries({ queryKey: ["schedule-occurrences"] });
-      setDeleteError(null);
-    },
-  });
-
-  async function deleteClass(cls: { id: string; name: string }) {
-    if (!isAdmin) return;
-    const ok = await confirm({
-      title: "Eliminar clase",
-      description: `¿Eliminar la clase «${cls.name}»?`,
-      confirmLabel: "Eliminar",
-      destructive: true,
-    });
-    if (!ok) return;
-    setDeleteError(null);
-    try {
-      await remove.mutateAsync(cls.id);
-    } catch (err) {
-      setDeleteError(err instanceof ApiError ? err.message : "No se pudo eliminar la clase");
-    }
-  }
-
   const items = useMemo(() => {
     const list = occurrences.data?.items ?? [];
     if (!search.trim()) return list;
@@ -142,6 +115,7 @@ export function ClassesPage() {
   }, [occurrences.data?.items, search]);
 
   const suspended = items.filter((o) => o.cancelled);
+  const selectedClass = q.data?.find((c) => c.id === selectedClassId);
 
   return (
     <WorkspaceShell
@@ -169,11 +143,24 @@ export function ClassesPage() {
     >
       {confirmDialog}
 
-      {deleteError ? (
-        <Alert variant="destructive">
-          <AlertDescription>{deleteError}</AlertDescription>
-        </Alert>
-      ) : null}
+      <EntityDetailSheet
+        open={!!selectedClassId}
+        onOpenChange={(o) => !o && setSelectedClassId(null)}
+        size="2xl"
+        title={selectedClass?.name ?? "Clase"}
+        description={
+          selectedClass
+            ? `${CLASS_TYPE_LABELS[selectedClass.type]} · ${selectedClass.teacher.firstName} ${selectedClass.teacher.lastName}`
+            : undefined
+        }
+      >
+        {selectedClassId ? (
+          <ClassQuickPanel
+            classId={selectedClassId}
+            onRemoved={() => setSelectedClassId(null)}
+          />
+        ) : null}
+      </EntityDetailSheet>
 
       <Card className="overflow-hidden">
         <ListToolbar
@@ -214,6 +201,7 @@ export function ClassesPage() {
               weekStartIso={weekStart}
               occurrences={items}
               isAdmin={isAdmin}
+              onOccurrenceClick={(occ) => setSelectedClassId(occ.classId)}
               onCancel={async (occ) => {
                 const ok = await confirm({
                   title: "Suspender sesión",
@@ -269,11 +257,14 @@ export function ClassesPage() {
                 <DataTableTh>Horario</DataTableTh>
                 <DataTableTh>Aula</DataTableTh>
                 <DataTableTh>Alumnos</DataTableTh>
-                <DataTableTh className="w-24" />
               </DataTableHead>
               <tbody>
                 {q.data?.map((c) => (
-                  <DataTableRow key={c.id} onClick={() => navigate(`/clases/${c.id}`)}>
+                  <DataTableRow
+                    key={c.id}
+                    className={selectedClassId === c.id ? "bg-primary/5" : undefined}
+                    onClick={() => setSelectedClassId(c.id)}
+                  >
                     <DataTableTd className="font-medium">{c.name}</DataTableTd>
                     <DataTableTd>{CLASS_TYPE_LABELS[c.type]}</DataTableTd>
                     <DataTableTd>
@@ -291,20 +282,6 @@ export function ClassesPage() {
                     <DataTableTd>{c.room ?? "—"}</DataTableTd>
                     <DataTableTd>
                       {c._count.enrollments}/{c.maxStudents}
-                    </DataTableTd>
-                    <DataTableTd className="text-right" onClick={(e) => e.stopPropagation()}>
-                      {isAdmin ? (
-                        <RowActionsMenu
-                          actions={[
-                            {
-                              label: "Eliminar",
-                              icon: <Trash2 className="h-4 w-4" />,
-                              destructive: true,
-                              onSelect: () => void deleteClass(c),
-                            },
-                          ]}
-                        />
-                      ) : null}
                     </DataTableTd>
                   </DataTableRow>
                 ))}

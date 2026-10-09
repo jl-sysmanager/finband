@@ -1,20 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FEE_STATUS_LABELS, PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from "@finband/shared";
-import { Bell, FileText, Layers, Trash2 } from "lucide-react";
+import { FileText, Layers, Trash2 } from "lucide-react";
+import { EntityDetailSheet } from "@/components/layout/EntityDetailSheet";
+import { StudentFeeDetailPanel } from "@/components/detail/StudentFeeDetailPanel";
+import { TeacherPayoutDetailPanel } from "@/components/detail/TeacherPayoutDetailPanel";
 import { BulkFeeGenerateDialog } from "@/components/fees/BulkFeeGenerateDialog";
-import { FeeReminderDialog } from "@/components/fees/FeeReminderDialog";
 import { useMemo, useState } from "react";
 import { CollapsibleSection } from "@/components/list/CollapsibleSection";
 import { TablePagination } from "@/components/list/TablePagination";
 import { usePagination } from "@/hooks/usePagination";
-import {
-  Sheet,
-  SheetBody,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import { FormSelect } from "@/components/form/FormSelect";
 import { MonthSelect } from "@/components/form/MonthSelect";
 import {
@@ -28,7 +22,6 @@ import { useConfirm } from "@/hooks/useConfirm";
 import { FilterField } from "@/components/list/FilterField";
 import { ListToolbar } from "@/components/list/ListToolbar";
 import { WorkspaceShell } from "@/components/layout/PageShell";
-import { MobileBottomBar } from "@/components/layout/MobileBottomBar";
 import { SegmentedControl } from "@/components/layout/SegmentedControl";
 import { feeStatusBadge } from "@/components/ui/badge";
 import {
@@ -120,8 +113,8 @@ export function PaymentsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [payOpen, setPayOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [reminderFeeId, setReminderFeeId] = useState<string | null>(null);
-  const [sheetFee, setSheetFee] = useState<StudentFee | null>(null);
+  const [selectedFeeId, setSelectedFeeId] = useState<string | null>(null);
+  const [selectedPayoutId, setSelectedPayoutId] = useState<string | null>(null);
   const { confirm, dialog: confirmDialog } = useConfirm();
 
   const feeQuery = buildQuery({
@@ -151,6 +144,16 @@ export function PaymentsPage() {
   const selectedFee = useMemo(
     () => fees.data?.find((f) => f.id === payFeeId),
     [fees.data, payFeeId],
+  );
+
+  const sheetFee = useMemo(
+    () => fees.data?.find((f) => f.id === selectedFeeId) ?? null,
+    [fees.data, selectedFeeId],
+  );
+
+  const sheetPayout = useMemo(
+    () => payouts.data?.find((p) => p.id === selectedPayoutId) ?? null,
+    [payouts.data, selectedPayoutId],
   );
 
   const pendingSelected = selectedFee
@@ -186,60 +189,6 @@ export function PaymentsPage() {
       api("/payments/teacher-payouts/generate", {
         method: "POST",
         body: JSON.stringify({ yearMonth: monthTo }),
-      }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["teacher-payouts"] }),
-  });
-
-  const payPayout = useMutation({
-    mutationFn: (p: PayoutRow) =>
-      api("/payments/teacher-payouts/pay", {
-        method: "POST",
-        body: JSON.stringify({
-          payoutId: p.id,
-          amount: p.amount - p.amountPaid,
-        }),
-      }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["teacher-payouts"] }),
-  });
-
-  const deletePayout = useMutation({
-    mutationFn: (id: string) => api(`/payments/teacher-payouts/${id}`, { method: "DELETE" }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["teacher-payouts"] });
-      setDeleteError(null);
-    },
-  });
-
-  const deleteFee = useMutation({
-    mutationFn: (id: string) => api(`/payments/student-fees/${id}`, { method: "DELETE" }),
-    onSuccess: (_data, id) => {
-      qc.invalidateQueries({ queryKey: ["student-fees"] });
-      setPayFeeId((prev) => {
-        if (prev !== id) return prev;
-        setPayAmount("");
-        return "";
-      });
-      setDeleteError(null);
-    },
-  });
-
-  async function runDelete(
-    action: () => Promise<unknown>,
-    fallbackMessage: string,
-  ) {
-    setDeleteError(null);
-    try {
-      await action();
-    } catch (err) {
-      setDeleteError(err instanceof ApiError ? err.message : fallbackMessage);
-    }
-  }
-
-  const resetPayoutPayment = useMutation({
-    mutationFn: (id: string) =>
-      api(`/payments/teacher-payouts/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ amountPaid: 0 }),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["teacher-payouts"] }),
   });
@@ -288,20 +237,6 @@ export function PaymentsPage() {
     }
   }
 
-  async function confirmDeleteStudentFee(f: StudentFee) {
-    const ok = await confirm({
-      title: "Eliminar cuota",
-      description:
-        f.payments.length > 0
-          ? `¿Eliminar la cuota y sus ${f.payments.length} cobro(s)?`
-          : "¿Eliminar esta cuota?",
-      confirmLabel: "Eliminar",
-      destructive: true,
-    });
-    if (!ok) return;
-    await runDelete(() => deleteFee.mutateAsync(f.id), "No se pudo eliminar la cuota");
-  }
-
   async function confirmVoidPayment(paymentId: string) {
     const ok = await confirm({
       title: "Anular cobro",
@@ -310,112 +245,85 @@ export function PaymentsPage() {
       destructive: true,
     });
     if (!ok) return;
-    await runDelete(() => deletePayment.mutateAsync(paymentId), "No se pudo anular el cobro");
-  }
-
-  async function confirmPayTeacherPayout(p: PayoutRow) {
-    const ok = await confirm({
-      title: "Registrar pago",
-      description: `¿Registrar pago de ${formatMoney(p.amount - p.amountPaid)} a ${p.teacher.firstName} ${p.teacher.lastName}?`,
-      confirmLabel: "Registrar",
-    });
-    if (ok) payPayout.mutate(p);
-  }
-
-  async function confirmResetPayout(payoutId: string) {
-    const ok = await confirm({
-      title: "Anular pago",
-      description: "¿Anular el pago registrado y dejar la liquidación pendiente?",
-      confirmLabel: "Anular",
-      destructive: true,
-    });
-    if (ok) resetPayoutPayment.mutate(payoutId);
-  }
-
-  async function confirmDeletePayout(payoutId: string) {
-    const ok = await confirm({
-      title: "Eliminar liquidación",
-      description: "¿Eliminar esta liquidación?",
-      confirmLabel: "Eliminar",
-      destructive: true,
-    });
-    if (!ok) return;
-    await runDelete(() => deletePayout.mutateAsync(payoutId), "No se pudo eliminar la liquidación");
+    setDeleteError(null);
+    try {
+      await deletePayment.mutateAsync(paymentId);
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : "No se pudo anular el cobro");
+    }
   }
 
   return (
     <WorkspaceShell
-      className="pb-24 md:pb-0"
       title="Control de pagos"
       description="Cobros de alumnos y liquidaciones a profesores"
       actions={
         isAdmin ? (
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => setPayOpen(true)}>
-              Registrar cobro
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)}>
-              <Layers className="h-4 w-4" /> Cuotas del mes
-            </Button>
+            {section === "students" ? (
+              <>
+                <Button size="sm" onClick={() => setPayOpen(true)}>
+                  Registrar cobro
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)}>
+                  <Layers className="h-4 w-4" /> Cuotas del mes
+                </Button>
+              </>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={genPayouts.isPending}
+                onClick={() => genPayouts.mutate()}
+              >
+                Generar liquidaciones ({monthTo})
+              </Button>
+            )}
           </div>
         ) : undefined
       }
     >
       {confirmDialog}
-      <Sheet open={!!sheetFee} onOpenChange={(o) => !o && setSheetFee(null)}>
-        <SheetContent size="md">
-          <SheetHeader>
-            <SheetTitle>
-              {sheetFee
-                ? `${sheetFee.student.lastName}, ${sheetFee.student.firstName}`
-                : "Cuota"}
-            </SheetTitle>
-            <SheetDescription>{sheetFee?.yearMonth}</SheetDescription>
-          </SheetHeader>
-          <SheetBody>
-            {sheetFee ? (
-              <div className="space-y-3 text-sm">
-                <p>
-                  Total {formatMoney(sheetFee.totalAmount)} · Pagado{" "}
-                  {formatMoney(sheetFee.amountPaid)}
-                </p>
-                <Badge variant={feeStatusBadge(sheetFee.status)}>
-                  {FEE_STATUS_LABELS[sheetFee.status]}
-                </Badge>
-                {isAdmin ? (
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        selectFee(sheetFee);
-                        setPayOpen(true);
-                        setSheetFee(null);
-                      }}
-                    >
-                      Cobrar
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setReminderFeeId(sheetFee.id);
-                        setSheetFee(null);
-                      }}
-                    >
-                      Recordatorio
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </SheetBody>
-        </SheetContent>
-      </Sheet>
-      <FeeReminderDialog
-        feeId={reminderFeeId}
-        open={!!reminderFeeId}
-        onOpenChange={(o) => !o && setReminderFeeId(null)}
-      />
+      <EntityDetailSheet
+        open={!!sheetFee}
+        onOpenChange={(o) => !o && setSelectedFeeId(null)}
+        size="lg"
+        title={
+          sheetFee
+            ? `${sheetFee.student.lastName}, ${sheetFee.student.firstName}`
+            : "Cuota"
+        }
+        description={sheetFee?.yearMonth}
+      >
+        {sheetFee ? (
+          <StudentFeeDetailPanel
+            key={`${sheetFee.id}-${sheetFee.amountPaid}-${sheetFee.payments.length}`}
+            fee={sheetFee}
+            onClose={() => setSelectedFeeId(null)}
+            onDeleted={() => setSelectedFeeId(null)}
+          />
+        ) : null}
+      </EntityDetailSheet>
+      <EntityDetailSheet
+        open={!!sheetPayout}
+        onOpenChange={(o) => !o && setSelectedPayoutId(null)}
+        size="lg"
+        title={
+          sheetPayout
+            ? `${sheetPayout.teacher.lastName}, ${sheetPayout.teacher.firstName}`
+            : "Liquidación"
+        }
+        description={sheetPayout?.yearMonth}
+      >
+        {sheetPayout ? (
+          <TeacherPayoutDetailPanel
+            key={`${sheetPayout.id}-${sheetPayout.amountPaid}`}
+            payout={sheetPayout}
+            onClose={() => setSelectedPayoutId(null)}
+            onDeleted={() => setSelectedPayoutId(null)}
+          />
+        ) : null}
+      </EntityDetailSheet>
       {isAdmin ? (
         <BulkFeeGenerateDialog open={bulkOpen} onOpenChange={setBulkOpen} defaultMonth={monthTo} />
       ) : null}
@@ -465,14 +373,6 @@ export function PaymentsPage() {
 
         {section === "students" ? (
           <CardContent className="space-y-4 pt-6">
-            {isAdmin ? (
-              <div className="flex justify-end">
-                <Button size="sm" onClick={() => setPayOpen(true)}>
-                  Registrar cobro
-                </Button>
-              </div>
-            ) : null}
-
             <Dialog open={payOpen} onOpenChange={setPayOpen}>
               <DialogContent size="md">
                 <DialogHeader>
@@ -544,17 +444,15 @@ export function PaymentsPage() {
                 <DataTableTh>Pagado</DataTableTh>
                 <DataTableTh>Pendiente</DataTableTh>
                 <DataTableTh>Estado</DataTableTh>
-                <DataTableTh className="w-24" />
               </DataTableHead>
               <tbody>
                 {feePagination.slice.map((f) => {
                   const pending = f.totalAmount - f.amountPaid;
-                  const selected = payFeeId === f.id;
                   return (
                     <DataTableRow
                       key={f.id}
-                      className={selected || sheetFee?.id === f.id ? "bg-primary/5" : undefined}
-                      onClick={() => setSheetFee(f)}
+                      className={selectedFeeId === f.id ? "bg-primary/5" : undefined}
+                      onClick={() => setSelectedFeeId(f.id)}
                     >
                       <DataTableTd className="font-medium">
                         {f.student.lastName}, {f.student.firstName}
@@ -567,49 +465,6 @@ export function PaymentsPage() {
                         <Badge variant={feeStatusBadge(f.status)}>
                           {FEE_STATUS_LABELS[f.status]}
                         </Badge>
-                      </DataTableTd>
-                      <DataTableTd className="text-right">
-                        <div className="flex justify-end gap-1">
-                          {isAdmin && pending > 0 ? (
-                            <>
-                              <Button
-                                size="sm"
-                                variant={selected ? "default" : "outline"}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  selectFee(f);
-                                  setPayOpen(true);
-                                }}
-                              >
-                                Cobrar
-                              </Button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                aria-label="Recordatorio"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setReminderFeeId(f.id);
-                                }}
-                              >
-                                <Bell className="h-4 w-4" />
-                              </Button>
-                            </>
-                          ) : null}
-                          {isAdmin ? (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              aria-label="Eliminar cuota"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void confirmDeleteStudentFee(f);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4 text-expense" />
-                            </Button>
-                          ) : null}
-                        </div>
                       </DataTableTd>
                     </DataTableRow>
                   );
@@ -686,17 +541,10 @@ export function PaymentsPage() {
             ) : null}
           </CardContent>
         ) : (
-          <CardContent className="pt-6">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm text-muted-foreground">
-                Liquidaciones del periodo · mes de referencia hasta {monthTo}
-              </p>
-              {isAdmin ? (
-                <Button size="sm" variant="outline" onClick={() => genPayouts.mutate()}>
-                  Generar liquidaciones ({monthTo})
-                </Button>
-              ) : null}
-            </div>
+          <CardContent className="space-y-4 pt-6">
+            <p className="text-sm text-muted-foreground">
+              Liquidaciones del periodo · mes de referencia hasta {monthTo}
+            </p>
             <DataTable maxBodyHeight="min(42vh, 440px)">
               <DataTableHead>
                 <DataTableTh>Profesor</DataTableTh>
@@ -706,11 +554,14 @@ export function PaymentsPage() {
                 <DataTableTh>Total</DataTableTh>
                 <DataTableTh>Pagado</DataTableTh>
                 <DataTableTh>Estado</DataTableTh>
-                <DataTableTh className="text-right">Acciones</DataTableTh>
               </DataTableHead>
               <tbody>
                 {payoutPagination.slice.map((p) => (
-                  <DataTableRow key={p.id}>
+                  <DataTableRow
+                    key={p.id}
+                    className={selectedPayoutId === p.id ? "bg-primary/5" : undefined}
+                    onClick={() => setSelectedPayoutId(p.id)}
+                  >
                     <DataTableTd className="font-medium">
                       {p.teacher.lastName}, {p.teacher.firstName}
                       {p.workDays > 0 && p.transportAmount > 0 ? (
@@ -734,47 +585,6 @@ export function PaymentsPage() {
                         </span>
                       ) : null}
                     </DataTableTd>
-                    <DataTableTd className="text-right">
-                      <div className="flex flex-wrap justify-end gap-1">
-                        <Button asChild size="sm" variant="outline">
-                          <a
-                            href={downloadUrl(`/reports/receipts/teacher-payout/${p.id}`)}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            <FileText className="h-4 w-4" /> PDF
-                          </a>
-                        </Button>
-                        {isAdmin && p.amountPaid < p.amount ? (
-                          <Button
-                            size="sm"
-                            disabled={payPayout.isPending}
-                            onClick={() => void confirmPayTeacherPayout(p)}
-                          >
-                            Marcar pagado
-                          </Button>
-                        ) : null}
-                        {isAdmin && p.amountPaid > 0 ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={resetPayoutPayment.isPending}
-                            onClick={() => void confirmResetPayout(p.id)}
-                          >
-                            Anular pago
-                          </Button>
-                        ) : null}
-                        {isAdmin ? (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => void confirmDeletePayout(p.id)}
-                          >
-                            <Trash2 className="h-4 w-4 text-expense" />
-                          </Button>
-                        ) : null}
-                      </div>
-                    </DataTableTd>
                   </DataTableRow>
                 ))}
               </tbody>
@@ -789,13 +599,6 @@ export function PaymentsPage() {
           </CardContent>
         )}
       </Card>
-      {isAdmin ? (
-        <MobileBottomBar>
-          <Button className="flex-1" size="sm" onClick={() => setPayOpen(true)}>
-            Registrar cobro
-          </Button>
-        </MobileBottomBar>
-      ) : null}
     </WorkspaceShell>
   );
 }

@@ -9,13 +9,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { EntityDetailSheet } from "@/components/layout/EntityDetailSheet";
+import { SheetFooter } from "@/components/ui/sheet";
 import {
   DataTable,
   DataTableHead,
@@ -24,7 +19,6 @@ import {
   DataTableTh,
 } from "@/components/list/DataTable";
 import { ListToolbar } from "@/components/list/ListToolbar";
-import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import { ListShell } from "@/components/layout/PageShell";
 import { QueryState } from "@/components/layout/QueryState";
 import { ApiError, api } from "@/lib/api";
@@ -49,7 +43,7 @@ export function TariffsPage() {
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
   const qc = useQueryClient();
   const { confirm, dialog: confirmDialog } = useConfirm();
-  const [formOpen, setFormOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<Rule | null>(null);
   const [classType, setClassType] = useState(NONE_CLASS);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -70,7 +64,7 @@ export function TariffsPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tariffs"] });
-      setFormOpen(false);
+      setSheetOpen(false);
       setEditing(null);
     },
   });
@@ -80,7 +74,7 @@ export function TariffsPage() {
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ["tariffs"] });
       if (editing?.id === id) {
-        setFormOpen(false);
+        setSheetOpen(false);
         setEditing(null);
       }
       setDeleteError(null);
@@ -88,10 +82,10 @@ export function TariffsPage() {
   });
 
   useEffect(() => {
-    if (formOpen) {
+    if (sheetOpen) {
       setClassType(editing?.classType ?? NONE_CLASS);
     }
-  }, [formOpen, editing]);
+  }, [sheetOpen, editing]);
 
   const filteredRules = useMemo(() => {
     if (!search.trim()) return rules.data ?? [];
@@ -114,7 +108,7 @@ export function TariffsPage() {
     setSaveError(null);
     setDeleteError(null);
     setEditing(rule ?? null);
-    setFormOpen(true);
+    setSheetOpen(true);
   }
 
   async function deleteRule(rule: Rule) {
@@ -171,33 +165,20 @@ export function TariffsPage() {
         </Alert>
       ) : null}
 
-      <Dialog open={formOpen} onOpenChange={(o) => !o && setFormOpen(false)}>
-        <DialogContent size="lg">
-          <DialogHeader>
-            <DialogTitle>{editing ? "Editar tarifa" : "Nueva tarifa"}</DialogTitle>
-          </DialogHeader>
-          <form key={editing?.id ?? "new"} onSubmit={onSubmitRule} className="grid gap-3 md:grid-cols-2">
-            <Input name="name" placeholder="Nombre" required defaultValue={editing?.name ?? ""} />
-            <Input
-              name="amount"
-              type="number"
-              step="0.01"
-              placeholder="Importe"
-              required
-              defaultValue={editing?.amount ?? ""}
-            />
-            <Input name="instrument" placeholder="Instrumento (opc.)" defaultValue={editing?.instrument ?? ""} />
-            <Input name="level" placeholder="Nivel (opc.)" defaultValue={editing?.level ?? ""} />
-            <FormSelect
-              value={classType}
-              onValueChange={setClassType}
-              options={classTypeOptions}
-            />
-            <Input name="priority" type="number" placeholder="Prioridad" defaultValue={editing?.priority ?? 0} />
-            {saveError ? (
-              <p className="md:col-span-2 text-sm text-destructive">{saveError}</p>
-            ) : null}
-            <DialogFooter className="md:col-span-2 pt-2">
+      <EntityDetailSheet
+        open={sheetOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setSheetOpen(false);
+            setEditing(null);
+          }
+        }}
+        size="lg"
+        title={editing ? editing.name : "Nueva tarifa"}
+        description="Regla de precio y criterios de aplicación"
+        footer={
+          isAdmin ? (
+            <SheetFooter className="w-full border-0 bg-transparent p-0">
               {editing ? (
                 <Button
                   type="button"
@@ -209,16 +190,37 @@ export function TariffsPage() {
                   <Trash2 className="h-4 w-4" /> Eliminar
                 </Button>
               ) : null}
-              <Button type="button" variant="outline" size="sm" onClick={() => setFormOpen(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit" size="sm" disabled={saveRule.isPending}>
+              <Button type="submit" form="tariff-sheet-form" size="sm" disabled={saveRule.isPending}>
                 {editing ? "Guardar" : "Añadir"}
               </Button>
-            </DialogFooter>
+            </SheetFooter>
+          ) : undefined
+        }
+      >
+        {isAdmin ? (
+          <form
+            id="tariff-sheet-form"
+            key={editing?.id ?? "new"}
+            onSubmit={onSubmitRule}
+            className="grid gap-3 sm:grid-cols-2"
+          >
+            <Input name="name" placeholder="Nombre" required defaultValue={editing?.name ?? ""} />
+            <Input
+              name="amount"
+              type="number"
+              step="0.01"
+              placeholder="Importe"
+              required
+              defaultValue={editing?.amount ?? ""}
+            />
+            <Input name="instrument" placeholder="Instrumento (opc.)" defaultValue={editing?.instrument ?? ""} />
+            <Input name="level" placeholder="Nivel (opc.)" defaultValue={editing?.level ?? ""} />
+            <FormSelect value={classType} onValueChange={setClassType} options={classTypeOptions} />
+            <Input name="priority" type="number" placeholder="Prioridad" defaultValue={editing?.priority ?? 0} />
+            {saveError ? <p className="sm:col-span-2 text-sm text-destructive">{saveError}</p> : null}
           </form>
-        </DialogContent>
-      </Dialog>
+        ) : null}
+      </EntityDetailSheet>
 
       <ListShell
         title="Tarifas"
@@ -250,13 +252,10 @@ export function TariffsPage() {
         <QueryState
           query={rules}
           empty={!(rules.data?.length ?? 0)}
-          emptyDescription="Crea la primera regla de precio."
-          emptyAction={
-            isAdmin ? (
-              <Button size="sm" onClick={() => openForm()}>
-                Nueva tarifa
-              </Button>
-            ) : undefined
+          emptyDescription={
+            isAdmin
+              ? "Crea la primera regla con «Nueva tarifa» en la cabecera."
+              : "No hay tarifas configuradas."
           }
         >
           {() => (
@@ -265,27 +264,16 @@ export function TariffsPage() {
             <DataTableHead>
               <DataTableTh>Nombre</DataTableTh>
               <DataTableTh>Importe</DataTableTh>
-              {isAdmin ? <DataTableTh className="w-14" /> : null}
             </DataTableHead>
             <tbody>
               {pagination.slice.map((r) => (
-                <DataTableRow key={r.id} onClick={() => isAdmin && openForm(r)}>
+                <DataTableRow
+                  key={r.id}
+                  className={editing?.id === r.id && sheetOpen ? "bg-primary/5" : undefined}
+                  onClick={() => isAdmin && openForm(r)}
+                >
                   <DataTableTd>{r.name}</DataTableTd>
                   <DataTableTd>{formatMoney(r.amount)}</DataTableTd>
-                  {isAdmin ? (
-                    <DataTableTd className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <RowActionsMenu
-                        actions={[
-                          { label: "Editar", onSelect: () => openForm(r) },
-                          {
-                            label: "Eliminar",
-                            destructive: true,
-                            onSelect: () => void deleteRule(r),
-                          },
-                        ]}
-                      />
-                    </DataTableTd>
-                  ) : null}
                 </DataTableRow>
               ))}
             </tbody>

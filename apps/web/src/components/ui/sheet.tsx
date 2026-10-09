@@ -18,10 +18,10 @@ export function SheetOverlay({
 }
 
 type SheetContentProps = React.ComponentProps<typeof DialogPrimitive.Content> & {
-  size?: "md" | "lg" | "xl";
+  size?: "md" | "lg" | "xl" | "2xl";
 };
 
-const widths = { md: "max-w-md", lg: "max-w-lg", xl: "max-w-xl" };
+const widths = { md: "max-w-md", lg: "max-w-lg", xl: "max-w-xl", "2xl": "max-w-2xl" };
 
 export function SheetContent({ className, children, size = "lg", ...props }: SheetContentProps) {
   return (
