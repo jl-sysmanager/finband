@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { userCreateSchema, userUpdateSchema } from "@finband/shared";
 import type { UserRole } from "@prisma/client";
 import { recordAudit } from "../lib/audit.js";
+import { issueSession } from "../lib/auth-plugin.js";
 import { prisma } from "../lib/prisma.js";
 
 export async function userRoutes(app: FastifyInstance) {
@@ -19,7 +20,7 @@ export async function userRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
     const hash = await bcrypt.hash(parsed.data.password, 10);
-    return prisma.user.create({
+    const created = await prisma.user.create({
       data: {
         username: parsed.data.username,
         passwordHash: hash,
@@ -27,6 +28,13 @@ export async function userRoutes(app: FastifyInstance) {
       },
       select: { id: true, username: true, role: true },
     });
+    await recordAudit(request, {
+      action: "CREATE",
+      entityType: "user",
+      entityId: created.id,
+      details: { username: created.username, role: created.role },
+    });
+    return created;
   });
 
   app.patch("/:id", async (request, reply) => {
@@ -49,20 +57,48 @@ export async function userRoutes(app: FastifyInstance) {
       if (clash) return reply.status(400).send({ error: "Ese nombre de usuario ya existe" });
     }
 
-    const updateData: { username?: string; role?: UserRole; passwordHash?: string } = {};
+    const updateData: {
+      username?: string;
+      role?: UserRole;
+      passwordHash?: string;
+      sessionVersion?: { increment: number };
+    } = {};
     if (data.username) updateData.username = data.username;
     if (data.role) updateData.role = data.role;
-    if (data.password) updateData.passwordHash = await bcrypt.hash(data.password, 10);
+    if (data.password) {
+      updateData.passwordHash = await bcrypt.hash(data.password, 10);
+      // Cierra las sesiones abiertas con la contraseña anterior.
+      updateData.sessionVersion = { increment: 1 };
+    }
 
     if (Object.keys(updateData).length === 0) {
       return reply.status(400).send({ error: "Nada que actualizar" });
     }
 
-    return prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id },
       data: updateData,
-      select: { id: true, username: true, role: true, createdAt: true },
+      select: { id: true, username: true, role: true, createdAt: true, sessionVersion: true },
     });
+    await recordAudit(request, {
+      action: "UPDATE",
+      entityType: "user",
+      entityId: id,
+      details: {
+        username: updated.username,
+        ...(data.role && data.role !== existing.role ? { role: `${existing.role} → ${data.role}` } : {}),
+        ...(data.password ? { passwordChanged: true } : {}),
+      },
+    });
+
+    // Si el administrador cambia su propia contraseña, renovamos su sesión
+    // para que no le expulse la invalidación de sesiones anteriores.
+    if (id === request.user.sub && data.password) {
+      issueSession(reply, updated);
+    }
+
+    const { sessionVersion: _sv, ...publicUser } = updated;
+    return publicUser;
   });
 
   app.delete("/:id", async (request, reply) => {

@@ -53,46 +53,26 @@ export function downloadUrl(path: string) {
   return `/api/v1${path}`;
 }
 
-export async function uploadSchoolLogo(file: File): Promise<{ ok: boolean; hasLogo: boolean }> {
+function fileForm(file: File) {
   const fd = new FormData();
   fd.append("file", file);
-  const res = await fetch("/api/v1/settings/school/logo", {
+  return fd;
+}
+
+export function uploadSchoolLogo(file: File) {
+  return api<{ ok: boolean; hasLogo: boolean }>("/settings/school/logo", {
     method: "POST",
-    credentials: "include",
-    body: fd,
+    body: fileForm(file),
   });
-  if (!res.ok) {
-    let body: { error?: string } = {};
-    try {
-      body = await res.json();
-    } catch {
-      /* ignore */
-    }
-    throw new ApiError(body.error ?? "No se pudo subir el logotipo", res.status);
-  }
-  return res.json() as Promise<{ ok: boolean; hasLogo: boolean }>;
 }
 
 export async function deleteSchoolLogo(): Promise<void> {
   await api("/settings/school/logo", { method: "DELETE" });
 }
 
-export async function uploadBackup(file: File): Promise<{ ok: boolean; message?: string }> {
-  const fd = new FormData();
-  fd.append("file", file);
-  const res = await fetch("/api/v1/admin/backup/restore", {
+export function uploadBackup(file: File) {
+  return api<{ ok: boolean; message?: string }>("/admin/backup/restore", {
     method: "POST",
-    credentials: "include",
-    body: fd,
+    body: fileForm(file),
   });
-  if (!res.ok) {
-    let body: { error?: string } = {};
-    try {
-      body = await res.json();
-    } catch {
-      /* ignore */
-    }
-    throw new ApiError(body.error ?? "Error al restaurar", res.status);
-  }
-  return res.json() as Promise<{ ok: boolean; message?: string }>;
 }

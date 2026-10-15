@@ -1,6 +1,12 @@
 import { FEE_STATUS_LABELS } from "@finband/shared";
 import { prisma } from "./prisma.js";
 import { formatMoneyEs } from "./money-format.js";
+import { calendarDateOf } from "./dates.js";
+
+function formatCalendarDateEs(d: Date) {
+  const [y, m, day] = calendarDateOf(d).split("-");
+  return `${day}/${m}/${y}`;
+}
 
 function normalizePhoneForWhatsApp(phone: string | null | undefined) {
   if (!phone) return null;
@@ -20,6 +26,7 @@ export async function buildFeeReminder(feeId: string) {
 
   const school = await prisma.schoolSettings.findFirst();
   const schoolName = school?.name ?? "Escuela de Música";
+  // Céntimos: la ruta responde en euros (lib/money-api.ts).
   const pending = Math.max(0, fee.totalAmount - fee.amountPaid);
   const student = fee.student;
   const statusLabel = FEE_STATUS_LABELS[fee.status as keyof typeof FEE_STATUS_LABELS] ?? fee.status;
@@ -33,7 +40,7 @@ export async function buildFeeReminder(feeId: string) {
     `Pagado: ${formatMoneyEs(fee.amountPaid)}`,
     `Pendiente: ${formatMoneyEs(pending)}`,
     `Estado: ${statusLabel}`,
-    fee.dueDate ? `Fecha límite: ${fee.dueDate.toISOString().slice(0, 10)}` : "",
+    fee.dueDate ? `Fecha límite: ${formatCalendarDateEs(fee.dueDate)}` : "",
     "",
     `Atentamente,`,
     schoolName,

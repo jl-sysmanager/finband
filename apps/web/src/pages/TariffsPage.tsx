@@ -1,13 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CLASS_TYPES, CLASS_TYPE_LABELS } from "@finband/shared";
 import { Plus, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { TablePagination } from "@/components/list/TablePagination";
 import { usePagination } from "@/hooks/usePagination";
 import { FormSelect } from "@/components/form/FormSelect";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { EntityDetailSheet } from "@/components/layout/EntityDetailSheet";
 import { SheetFooter } from "@/components/ui/sheet";
@@ -81,11 +80,6 @@ export function TariffsPage() {
     },
   });
 
-  useEffect(() => {
-    if (sheetOpen) {
-      setClassType(editing?.classType ?? NONE_CLASS);
-    }
-  }, [sheetOpen, editing]);
 
   const filteredRules = useMemo(() => {
     if (!search.trim()) return rules.data ?? [];
@@ -98,16 +92,13 @@ export function TariffsPage() {
     );
   }, [rules.data, search]);
 
-  const pagination = usePagination(filteredRules, 12);
-
-  useEffect(() => {
-    pagination.setPage(1);
-  }, [search]);
+  const pagination = usePagination(filteredRules, 12, search);
 
   function openForm(rule?: Rule) {
     setSaveError(null);
     setDeleteError(null);
     setEditing(rule ?? null);
+    setClassType(rule?.classType ?? NONE_CLASS);
     setSheetOpen(true);
   }
 

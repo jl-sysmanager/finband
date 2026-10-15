@@ -1,8 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { generateMonthSchema, studentDiscountSchema, studentSchema } from "@finband/shared";
-import { calculateStudentMonthlyFee, generateFeeForStudent } from "../lib/tariffs.js";
+import {
+  calculateStudentMonthlyFee,
+  FeeHasPaymentsError,
+  generateFeeForStudent,
+} from "../lib/tariffs.js";
 import { recordAudit } from "../lib/audit.js";
 import { prisma } from "../lib/prisma.js";
+import { parseCalendarDate } from "../lib/dates.js";
 
 export async function studentRoutes(app: FastifyInstance) {
   app.get("/", async (request) => {
@@ -26,7 +31,10 @@ export async function studentRoutes(app: FastifyInstance) {
         where,
         include: {
           primaryTeacher: true,
-          enrollments: { where: { active: true }, include: { classGroup: true } },
+          enrollments: {
+            where: { active: true, classGroup: { deletedAt: null } },
+            include: { classGroup: true },
+          },
         },
         orderBy: { lastName: "asc" },
         skip: (page - 1) * limit,
@@ -35,6 +43,15 @@ export async function studentRoutes(app: FastifyInstance) {
       prisma.student.count({ where }),
     ]);
     return { items, total, page, limit };
+  });
+
+  /** Lista ligera de alumnos activos para selectores (sin paginar). */
+  app.get("/options", async () => {
+    return prisma.student.findMany({
+      where: { deletedAt: null, status: "ACTIVE" },
+      select: { id: true, firstName: true, lastName: true },
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    });
   });
 
   app.get("/:id", async (request, reply) => {
@@ -58,13 +75,20 @@ export async function studentRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
     const d = parsed.data;
-    return prisma.student.create({
+    const saved = await prisma.student.create({
       data: {
         ...d,
-        birthDate: d.birthDate ? new Date(d.birthDate) : null,
+        birthDate: d.birthDate ? parseCalendarDate(d.birthDate) : null,
         email: d.email || null,
       },
     });
+    await recordAudit(request, {
+      action: "CREATE",
+      entityType: "student",
+      entityId: saved.id,
+      details: null,
+    });
+    return saved;
   });
 
   app.patch("/:id", async (request, reply) => {
@@ -76,14 +100,21 @@ export async function studentRoutes(app: FastifyInstance) {
     const d = parsed.data;
     const existing = await prisma.student.findFirst({ where: { id, deletedAt: null } });
     if (!existing) return reply.status(404).send({ error: "Alumno no encontrado" });
-    return prisma.student.update({
+    const saved = await prisma.student.update({
       where: { id },
       data: {
         ...d,
-        birthDate: d.birthDate === undefined ? undefined : d.birthDate ? new Date(d.birthDate) : null,
+        birthDate: d.birthDate === undefined ? undefined : d.birthDate ? parseCalendarDate(d.birthDate) : null,
         email: d.email === undefined ? undefined : d.email || null,
       },
     });
+    await recordAudit(request, {
+      action: "UPDATE",
+      entityType: "student",
+      entityId: saved.id,
+      details: { fields: Object.keys((request.body ?? {}) as object) },
+    });
+    return saved;
   });
 
   app.delete("/:id", async (request, reply) => {
@@ -110,26 +141,47 @@ export async function studentRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
     const d = parsed.data;
-    return prisma.studentDiscount.create({
+    const saved = await prisma.studentDiscount.create({
       data: {
         studentId: id,
         ...d,
-        validFrom: d.validFrom ? new Date(d.validFrom) : null,
-        validTo: d.validTo ? new Date(d.validTo) : null,
+        validFrom: d.validFrom ? parseCalendarDate(d.validFrom) : null,
+        validTo: d.validTo ? parseCalendarDate(d.validTo) : null,
       },
     });
+    await recordAudit(request, {
+      action: "CREATE",
+      entityType: "student_discount",
+      entityId: saved.id,
+      details: null,
+    });
+    return saved;
   });
 
-  app.delete("/:id/discounts/:discountId", async (request) => {
-    const { discountId } = request.params as { id: string; discountId: string };
-    await prisma.studentDiscount.delete({ where: { id: discountId } });
+  app.delete("/:id/discounts/:discountId", async (request, reply) => {
+    const { id, discountId } = request.params as { id: string; discountId: string };
+    // Solo se borra si el descuento pertenece al alumno de la URL.
+    const { count } = await prisma.studentDiscount.deleteMany({
+      where: { id: discountId, studentId: id },
+    });
+    if (count === 0) return reply.status(404).send({ error: "Descuento no encontrado" });
+    await recordAudit(request, {
+      action: "DELETE",
+      entityType: "student_discount",
+      entityId: discountId,
+      details: { studentId: id },
+    });
     return { ok: true };
   });
 
   app.get("/:id/fee-preview", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const { yearMonth } = request.query as { yearMonth?: string };
+    if (yearMonth !== undefined && !/^\d{4}-\d{2}$/.test(yearMonth)) {
+      return reply.status(400).send({ error: "yearMonth inválido (YYYY-MM)" });
+    }
     try {
-      return await calculateStudentMonthlyFee(id);
+      return await calculateStudentMonthlyFee(id, yearMonth);
     } catch {
       return reply.status(404).send({ error: "Alumno no encontrado" });
     }
@@ -143,7 +195,10 @@ export async function studentRoutes(app: FastifyInstance) {
     }
     try {
       return await generateFeeForStudent(id, parsed.data.yearMonth);
-    } catch {
+    } catch (e) {
+      if (e instanceof FeeHasPaymentsError) {
+        return reply.status(409).send({ error: e.message });
+      }
       return reply.status(404).send({ error: "Alumno no encontrado" });
     }
   });

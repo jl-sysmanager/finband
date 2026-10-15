@@ -4,11 +4,11 @@ import { Bell, FileText, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { FormSelect } from "@/components/form/FormSelect";
 import { FeeReminderDialog } from "@/components/fees/FeeReminderDialog";
-import { feeStatusBadge } from "@/components/ui/badge";
+import { feeStatusBadge } from "@/lib/status";
 import { Badge } from "@/components/ui/badge";
+import { Field } from "@/components/form/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   DataTable,
   DataTableHead,
@@ -17,7 +17,9 @@ import {
   DataTableTh,
 } from "@/components/list/DataTable";
 import { ApiError, api, downloadUrl } from "@/lib/api";
-import { formatDate, formatMoney } from "@/lib/utils";
+import { invalidateFinanceQueries } from "@/lib/query-invalidation";
+import { formatDate, formatMoney, roundMoney } from "@/lib/utils";
+import { toast } from "@/stores/toast";
 import { useAuth } from "@/stores/auth";
 import { useConfirm } from "@/hooks/useConfirm";
 export type StudentFeeRow = {
@@ -45,8 +47,15 @@ export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
   const qc = useQueryClient();
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
   const { confirm, dialog: confirmDialog } = useConfirm();
-  const pending = Math.max(0, fee.totalAmount - fee.amountPaid);
+  const pending = Math.max(0, roundMoney(fee.totalAmount - fee.amountPaid));
   const [payAmount, setPayAmount] = useState(pending > 0 ? String(pending) : "");
+  // El panel no se vuelve a montar tras un cobro (perdería el aviso de recibo):
+  // se actualiza el importe propuesto cuando cambia lo pendiente.
+  const [proposedFor, setProposedFor] = useState(pending);
+  if (proposedFor !== pending) {
+    setProposedFor(pending);
+    setPayAmount(pending > 0 ? String(pending) : "");
+  }
   const [payMethod, setPayMethod] = useState("EFECTIVO");
   const [reminderOpen, setReminderOpen] = useState(false);
 
@@ -61,7 +70,7 @@ export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
         }),
       }),
     onSuccess: async (data) => {
-      await qc.invalidateQueries({ queryKey: ["student-fees"] });
+      await invalidateFinanceQueries(qc);
       if (data?.id) {
         const ok = await confirm({
           title: "Recibo",
@@ -71,17 +80,19 @@ export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
         if (ok) window.open(downloadUrl(`/reports/receipts/student-payment/${data.id}`), "_blank");
       }
     },
+    onError: (err) =>
+      toast(err instanceof ApiError ? err.message : "No se pudo registrar el cobro", "error"),
   });
 
   const deletePayment = useMutation({
     mutationFn: (id: string) => api(`/payments/student-payments/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["student-fees"] }),
+    onSuccess: () => invalidateFinanceQueries(qc),
   });
 
   const deleteFee = useMutation({
     mutationFn: () => api(`/payments/student-fees/${fee.id}`, { method: "DELETE" }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["student-fees"] });
+      invalidateFinanceQueries(qc);
       onDeleted?.();
       onClose?.();
     },
@@ -147,8 +158,7 @@ export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
           <div className="space-y-3 rounded-lg border border-border p-3">
             <p className="text-xs font-medium text-muted-foreground">Registrar cobro</p>
             <div className="grid gap-2 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label>Importe</Label>
+              <Field label="Importe">
                 <Input
                   type="number"
                   step="0.01"
@@ -156,17 +166,16 @@ export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
                   value={payAmount}
                   onChange={(e) => setPayAmount(e.target.value)}
                 />
-              </div>
-              <div className="space-y-1">
-                <Label>Método</Label>
+              </Field>
+              <Field label="Método">
                 <FormSelect value={payMethod} onValueChange={setPayMethod} options={METHOD_OPTIONS} />
-              </div>
+              </Field>
             </div>
             <Button
               size="sm"
               className="w-full"
               disabled={!payAmount || payFee.isPending}
-              onClick={() => void payFee.mutateAsync()}
+              onClick={() => payFee.mutate()}
             >
               Cobrar
             </Button>
@@ -189,6 +198,7 @@ export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
                     <DataTableTd className="text-right">
                       <Button asChild size="icon" variant="ghost">
                         <a
+                          aria-label="Descargar recibo"
                           href={downloadUrl(`/reports/receipts/student-payment/${p.id}`)}
                           target="_blank"
                           rel="noreferrer"
@@ -197,7 +207,12 @@ export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
                         </a>
                       </Button>
                       {isAdmin ? (
-                        <Button size="icon" variant="ghost" onClick={() => void voidPayment(p.id)}>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          aria-label="Anular cobro"
+                          onClick={() => void voidPayment(p.id)}
+                        >
                           <Trash2 className="h-4 w-4 text-expense" />
                         </Button>
                       ) : null}

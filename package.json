@@ -14,10 +14,14 @@
     "db:seed": "tsx prisma/seed.ts",
     "manual:pdf": "tsx scripts/generate-user-manual.ts",
     "db:generate": "prisma generate",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "test": "npm run build -w @finband/shared && npm test -w @finband/api",
+    "lint": "oxlint -c apps/web/.oxlintrc.json apps/web/src && oxlint -c apps/api/.oxlintrc.json apps/api/src apps/api/test",
+    "typecheck": "npm run build -w @finband/shared && tsc -p apps/api/tsconfig.json --noEmit && tsc -p apps/web/tsconfig.app.json --noEmit"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
+    "oxlint": "^1.88.0",
     "prisma": "^6.5.0",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2"

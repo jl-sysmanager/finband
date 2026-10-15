@@ -5,6 +5,11 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** Redondea a céntimos (evita enviar 99.99999… al servidor). */
+export function roundMoney(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
 export function formatMoney(n: number) {
   return new Intl.NumberFormat("es-ES", {
     style: "currency",

@@ -12,6 +12,7 @@ const LOGO_BOX = 52;
 const LOGO_GAP = 10;
 const TEXT_LEFT = PAGE_MARGIN + LOGO_BOX + LOGO_GAP;
 
+/** Formatea un importe en euros (los llamantes convierten antes desde céntimos). */
 export function formatEuro(n: number) {
   return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(n);
 }

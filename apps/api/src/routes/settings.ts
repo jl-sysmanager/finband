@@ -2,6 +2,7 @@ import multipart from "@fastify/multipart";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { academicYearSchema, categorySchema, schoolSettingsSchema } from "@finband/shared";
 import { prisma } from "../lib/prisma.js";
+import { recordAudit } from "../lib/audit.js";
 import {
   logoMimeFromFilename,
   readLogoBuffer,
@@ -9,6 +10,7 @@ import {
   saveSchoolLogoFile,
   MAX_LOGO_BYTES,
 } from "../lib/school-logo.js";
+import { parseCalendarDate } from "../lib/dates.js";
 
 function publicBranding(s: {
   name: string;
@@ -98,6 +100,12 @@ export async function settingsRoutes(app: FastifyInstance) {
       create: { id: "default", name: data.name ?? "Escuela", ...data },
       update: data,
     });
+    await recordAudit(request, {
+      action: "UPDATE",
+      entityType: "school_settings",
+      entityId: "default",
+      details: { fields: Object.keys(data) },
+    });
     return schoolPayload(await loadSchool());
   });
 
@@ -162,8 +170,8 @@ export async function settingsRoutes(app: FastifyInstance) {
     return prisma.academicYear.create({
       data: {
         name: d.name,
-        startDate: new Date(d.startDate),
-        endDate: new Date(d.endDate),
+        startDate: parseCalendarDate(d.startDate),
+        endDate: parseCalendarDate(d.endDate),
         isActive: d.isActive ?? false,
       },
     });

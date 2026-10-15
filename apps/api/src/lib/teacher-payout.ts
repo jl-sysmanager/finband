@@ -3,6 +3,8 @@ import {
   monthBounds,
   scheduleTotalsInRange,
 } from "./schedule-occurrences.js";
+import { localIsoDate } from "./dates.js";
+import { roundCents } from "./money.js";
 import { prisma } from "./prisma.js";
 
 export type PayoutBasis =
@@ -12,6 +14,7 @@ export type PayoutBasis =
   | "hourlyWeeklyEstimate"
   | "none";
 
+/** Importes en céntimos. */
 export type PayoutCalculation = {
   baseAmount: number;
   transportAmount: number;
@@ -43,30 +46,23 @@ function weeksInMonth(yearMonth: string): number {
   return daysInMonth / 7;
 }
 
-async function cancelledKeysForTeacher(teacherId: string, from: string, to: string) {
-  const rows = await prisma.classScheduleCancellation.findMany({
-    where: {
-      sessionDate: { gte: from, lte: to },
-      scheduleSlot: { classGroup: { teacherId } },
-    },
-  });
-  return new Set(rows.map((r) => cancellationKey(r.scheduleSlotId, r.sessionDate)));
-}
+type ScheduleGroup = {
+  durationMinutes: number;
+  deletedAt?: Date | null;
+  scheduleSlots: Array<{ id: string; dayOfWeek: number; startTime: string; endTime: string }>;
+};
 
 /** Sesiones e horas del mes según franjas, excluyendo suspensiones puntuales. */
-export async function scheduleTotalsForMonth(
-  classGroups: Array<{
-    durationMinutes: number;
-    scheduleSlots: Array<{ id: string; dayOfWeek: number; startTime: string; endTime: string }>;
-  }>,
-  yearMonth: string,
-  teacherId: string,
-) {
+function scheduleTotalsForMonth(classGroups: ScheduleGroup[], yearMonth: string, cancelled: Set<string>) {
   const { from, to } = monthBounds(yearMonth);
-  const cancelled = await cancelledKeysForTeacher(teacherId, from, to);
-  return scheduleTotalsInRange(from, to, classGroups, cancelled);
+  // Una clase borrada cuenta hasta el día en que se borró (incluido).
+  const groups = classGroups
+    .map((g) => ({ ...g, activeUntil: g.deletedAt ? localIsoDate(g.deletedAt) : null }))
+    .filter((g) => !g.activeUntil || g.activeUntil >= from);
+  return scheduleTotalsInRange(from, to, groups, cancelled);
 }
 
+/** Base de la liquidación en céntimos a partir de las tarifas del profesor (en céntimos). */
 export function computeBaseFromTeacherConfig(
   teacher: {
     monthlySalary: number | null;
@@ -94,14 +90,14 @@ export function computeBaseFromTeacherConfig(
   if (teacher.hourlyRate > 0) {
     if (schedule.totalHours > 0) {
       return {
-        baseAmount: schedule.totalHours * teacher.hourlyRate,
+        baseAmount: roundCents(schedule.totalHours * teacher.hourlyRate),
         basis: "hourlyRate",
       };
     }
     const weekly = teacher.weeklyHours ?? 0;
     if (weekly > 0) {
       return {
-        baseAmount: teacher.hourlyRate * weekly * weeksInMonth(yearMonth),
+        baseAmount: roundCents(teacher.hourlyRate * weekly * weeksInMonth(yearMonth)),
         basis: "hourlyWeeklyEstimate",
       };
     }
@@ -110,35 +106,57 @@ export function computeBaseFromTeacherConfig(
   return { baseAmount: 0, basis: "none" };
 }
 
+/**
+ * Liquidaciones del mes de varios profesores con dos consultas en total
+ * (profesores con horarios y suspensiones del mes). `"active"` = todos los no borrados.
+ */
+export async function calculateTeacherPayouts(
+  teachers: string[] | "active",
+  yearMonth: string,
+): Promise<Map<string, PayoutCalculation>> {
+  const { from, to } = monthBounds(yearMonth);
+  const where = teachers === "active" ? { deletedAt: null } : { id: { in: teachers } };
+  const [rows, cancellations] = await Promise.all([
+    prisma.teacher.findMany({
+      where,
+      include: { classGroups: { include: { scheduleSlots: true } } },
+    }),
+    prisma.classScheduleCancellation.findMany({
+      where: {
+        sessionDate: { gte: from, lte: to },
+        scheduleSlot: { classGroup: { teacher: where } },
+      },
+      select: { scheduleSlotId: true, sessionDate: true },
+    }),
+  ]);
+  // Las claves llevan el id de la franja, así que un único conjunto sirve para todos.
+  const cancelled = new Set(cancellations.map((c) => cancellationKey(c.scheduleSlotId, c.sessionDate)));
+
+  const result = new Map<string, PayoutCalculation>();
+  for (const teacher of rows) {
+    const schedule = scheduleTotalsForMonth(teacher.classGroups, yearMonth, cancelled);
+    const { baseAmount, basis } = computeBaseFromTeacherConfig(teacher, schedule, yearMonth);
+    const transportAmount = teacher.transportCostPerDay * schedule.workDays;
+    result.set(teacher.id, {
+      baseAmount,
+      transportAmount,
+      workDays: schedule.workDays,
+      amount: baseAmount + transportAmount,
+      basis,
+      sessionCount: schedule.sessionCount,
+      totalHours: schedule.totalHours,
+    });
+  }
+  return result;
+}
+
 export async function calculateTeacherPayout(
   teacherId: string,
   yearMonth: string,
 ): Promise<PayoutCalculation> {
-  const teacher = await prisma.teacher.findUnique({
-    where: { id: teacherId },
-    include: {
-      classGroups: {
-        include: { scheduleSlots: true },
-      },
-    },
-  });
-  if (!teacher) {
+  const calc = (await calculateTeacherPayouts([teacherId], yearMonth)).get(teacherId);
+  if (!calc) {
     throw new Error("Profesor no encontrado");
   }
-
-  const schedule = await scheduleTotalsForMonth(teacher.classGroups, yearMonth, teacherId);
-  const { baseAmount, basis } = computeBaseFromTeacherConfig(teacher, schedule, yearMonth);
-
-  const transportAmount = (teacher.transportCostPerDay ?? 0) * schedule.workDays;
-  const amount = baseAmount + transportAmount;
-
-  return {
-    baseAmount,
-    transportAmount,
-    workDays: schedule.workDays,
-    amount,
-    basis,
-    sessionCount: schedule.sessionCount,
-    totalHours: schedule.totalHours,
-  };
+  return calc;
 }

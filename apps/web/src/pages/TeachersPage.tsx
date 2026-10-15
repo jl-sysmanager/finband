@@ -18,7 +18,7 @@ import {
 import { ListToolbar } from "@/components/list/ListToolbar";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import { buildQuery, formatMoney } from "@/lib/utils";
+import { formatMoney } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 
 type TeacherRow = {
@@ -36,9 +36,9 @@ export function TeachersPage() {
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
 
   const q = useQuery({
-    queryKey: ["teachers", search],
-    queryFn: () =>
-      api<TeacherRow[]>(`/teachers${buildQuery({ search: search || undefined })}`),
+    // Lista completa (pocos profesores) y filtro en cliente: sin una petición por tecla.
+    queryKey: ["teachers"],
+    queryFn: () => api<TeacherRow[]>("/teachers"),
   });
 
   const filtered = useMemo(() => {
@@ -53,7 +53,7 @@ export function TeachersPage() {
     );
   }, [q.data, search]);
 
-  const pagination = usePagination(filtered, 12);
+  const pagination = usePagination(filtered, 12, search);
   const selectedRow = filtered.find((t) => t.id === selectedId);
 
   return (

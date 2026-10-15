@@ -25,16 +25,3 @@ export function Badge({
 }: React.ComponentProps<"span"> & VariantProps<typeof badgeVariants>) {
   return <span className={cn(badgeVariants({ variant }), className)} {...props} />;
 }
-
-export function feeStatusBadge(status: string) {
-  switch (status) {
-    case "PAID":
-      return "success" as const;
-    case "PARTIAL":
-      return "warning" as const;
-    case "PENDING":
-      return "destructive" as const;
-    default:
-      return "default" as const;
-  }
-}

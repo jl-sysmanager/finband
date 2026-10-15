@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from "@finband/shared";
 import { Plus, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { TablePagination } from "@/components/list/TablePagination";
 import { usePagination } from "@/hooks/usePagination";
 import { FormSelect } from "@/components/form/FormSelect";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/form/Field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { EntityDetailSheet } from "@/components/layout/EntityDetailSheet";
 import { SheetFooter } from "@/components/ui/sheet";
 import { FilterField } from "@/components/list/FilterField";
@@ -77,16 +77,12 @@ export function FinancePage({ mode }: FinanceProps) {
     );
   }, [entries.data, search]);
 
-  const pagination = usePagination(filteredEntries, 12);
-
-  useEffect(() => {
-    pagination.setPage(1);
-  }, [search, from, to, mode]);
+  const pagination = usePagination(filteredEntries, 12, `${mode}|${from}|${to}|${search}`);
 
   const categories = useQuery({
     queryKey: [isIncome ? "income-categories" : "expense-categories"],
     queryFn: () =>
-      api<Array<{ id: string; name: string }>>(
+      api<Array<{ id: string; name: string; managedByApp: boolean }>>(
         `/settings/${isIncome ? "income" : "expense"}-categories`,
       ),
   });
@@ -128,7 +124,9 @@ export function FinancePage({ mode }: FinanceProps) {
   function openForm(entry?: Entry) {
     setSaveError(null);
     setEditing(entry ?? null);
-    setCategoryId(entry?.categoryId ?? categories.data?.[0]?.id ?? "");
+    setCategoryId(
+      entry?.categoryId ?? categories.data?.find((c) => !c.managedByApp)?.id ?? "",
+    );
     setMethod(entry?.method ?? NO_METHOD);
     setSheetOpen(true);
   }
@@ -178,7 +176,14 @@ export function FinancePage({ mode }: FinanceProps) {
   }
 
   const formKey = editing?.id ?? "new";
-  const categoryOptions = (categories.data ?? []).map((c) => ({ value: c.id, label: c.name }));
+  // Las categorías gestionadas por la app (cobros de cuotas / pagos a profesores) no
+  // admiten apuntes nuevos; solo se muestran al editar un apunte antiguo que ya la usa.
+  const categoryOptions = (categories.data ?? [])
+    .filter((c) => !c.managedByApp || c.id === editing?.categoryId)
+    .map((c) => ({ value: c.id, label: c.managedByApp ? `${c.name} (gestionada por la app)` : c.name }));
+  const managedNote = isIncome
+    ? "Los cobros de cuotas se registran en Pagos y ya suman en el balance."
+    : "Los pagos a profesores se registran en sus liquidaciones y ya restan en el balance.";
   const methodOptions = [
     { value: NO_METHOD, label: "—" },
     ...PAYMENT_METHODS.map((m) => ({ value: m, label: PAYMENT_METHOD_LABELS[m] })),
@@ -223,29 +228,28 @@ export function FinancePage({ mode }: FinanceProps) {
             <p className="text-sm text-muted-foreground">Cargando categorías…</p>
           ) : (
             <form id="finance-sheet-form" key={formKey} onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label>Fecha</Label>
+              <Field label="Fecha">
                 <Input
                   name="date"
                   type="date"
                   required
                   defaultValue={editing ? toDateInput(editing.date) : todayISO()}
                 />
-              </div>
-              <div className="space-y-1 md:col-span-2">
-                <Label>Concepto</Label>
+              </Field>
+              <Field label="Concepto" className="md:col-span-2">
                 <Input name="concept" required defaultValue={editing?.concept ?? ""} />
-              </div>
+              </Field>
               <div className="space-y-1">
-                <Label>Categoría</Label>
-                <FormSelect
-                  value={categoryId}
-                  onValueChange={setCategoryId}
-                  options={categoryOptions}
-                />
+                <Field label="Categoría">
+                  <FormSelect
+                    value={categoryId}
+                    onValueChange={setCategoryId}
+                    options={categoryOptions}
+                  />
+                </Field>
+                <p className="text-xs text-muted-foreground">{managedNote}</p>
               </div>
-              <div className="space-y-1">
-                <Label>Importe</Label>
+              <Field label="Importe">
                 <Input
                   name="amount"
                   type="number"
@@ -253,17 +257,15 @@ export function FinancePage({ mode }: FinanceProps) {
                   required
                   defaultValue={editing?.amount ?? ""}
                 />
-              </div>
+              </Field>
               {isIncome ? (
-                <div className="space-y-1">
-                  <Label>Método de pago</Label>
+                <Field label="Método de pago">
                   <FormSelect value={method} onValueChange={setMethod} options={methodOptions} />
-                </div>
+                </Field>
               ) : null}
-              <div className="space-y-1 md:col-span-2">
-                <Label>Observaciones</Label>
+              <Field label="Observaciones" className="md:col-span-2">
                 <Input name="notes" defaultValue={editing?.notes ?? ""} />
-              </div>
+              </Field>
               {saveError ? (
                 <Alert variant="destructive" className="sm:col-span-2">
                   <AlertDescription>{saveError}</AlertDescription>

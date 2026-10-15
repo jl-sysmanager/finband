@@ -1,48 +1,41 @@
 import type { FastifyInstance } from "fastify";
 import { previewFeesForMonth } from "../lib/tariffs.js";
+import { fromCents } from "../lib/money.js";
 import { prisma } from "../lib/prisma.js";
+import { balanceForMonth } from "../lib/balance.js";
+import { calendarDateOf, monthDateRange, yearMonthOf } from "../lib/dates.js";
 
 function monthBounds(date = new Date()) {
-  const start = new Date(date.getFullYear(), date.getMonth(), 1);
-  const end = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59);
-  const ym = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-  return { start, end, ym };
+  const ym = yearMonthOf(date);
+  return { ...monthDateRange(ym), ym };
 }
 
 export async function dashboardRoutes(app: FastifyInstance) {
   app.get("/summary", async () => {
-    const { start, end, ym } = monthBounds();
+    const { ym } = monthBounds();
 
     const [
       students,
       teachers,
       classes,
-      incomeAgg,
-      expenseAgg,
+      balance,
       pendingFees,
       pendingPayouts,
     ] = await Promise.all([
       prisma.student.count({ where: { deletedAt: null, status: "ACTIVE" } }),
       prisma.teacher.count({ where: { deletedAt: null } }),
-      prisma.classGroup.count(),
-      prisma.incomeEntry.aggregate({
-        where: { date: { gte: start, lte: end } },
-        _sum: { amount: true },
-      }),
-      prisma.expenseEntry.aggregate({
-        where: { date: { gte: start, lte: end } },
-        _sum: { amount: true },
-      }),
+      prisma.classGroup.count({ where: { deletedAt: null } }),
+      balanceForMonth(ym),
       prisma.studentFee.findMany({
         where: { yearMonth: ym, status: { in: ["PENDING", "PARTIAL"] } },
+        select: { totalAmount: true, amountPaid: true },
       }),
       prisma.teacherPayout.findMany({
         where: { yearMonth: ym, status: { in: ["PENDING", "PARTIAL"] } },
+        select: { amount: true, amountPaid: true },
       }),
     ]);
 
-    const income = incomeAgg._sum.amount ?? 0;
-    const expenses = expenseAgg._sum.amount ?? 0;
     const pendingCollections = pendingFees.reduce(
       (s, f) => s + (f.totalAmount - f.amountPaid),
       0,
@@ -56,11 +49,12 @@ export async function dashboardRoutes(app: FastifyInstance) {
       students,
       teachers,
       classes,
-      monthlyIncome: income,
-      monthlyExpenses: expenses,
-      monthlyBalance: income - expenses,
-      pendingCollections,
-      pendingTeacherPay,
+      // Ingresos = apuntes + cobros de cuotas; gastos = apuntes + pagos a profesores.
+      monthlyIncome: fromCents(balance.income + balance.feeCollections),
+      monthlyExpenses: fromCents(balance.expense + balance.teacherPayments),
+      monthlyBalance: fromCents(balance.balance),
+      pendingCollections: fromCents(pendingCollections),
+      pendingTeacherPay: fromCents(pendingTeacherPay),
     };
   });
 
@@ -79,11 +73,28 @@ export async function dashboardRoutes(app: FastifyInstance) {
     const zeroed = () => Object.fromEntries(months.map((m) => [m, 0])) as Record<string, number>;
 
     const [incomes, expenses, studentPayments, studentFees, teacherPayouts] = await Promise.all([
-      prisma.incomeEntry.findMany({ where: { date: { gte: start } } }),
-      prisma.expenseEntry.findMany({ where: { date: { gte: start } } }),
-      prisma.studentPayment.findMany({ where: { paidAt: { gte: start } } }),
-      prisma.studentFee.findMany({ where: { yearMonth: { in: [...months] } } }),
-      prisma.teacherPayout.findMany({ where: { yearMonth: { in: [...months] } } }),
+      // Apuntes manuales sin los de categorías gestionadas por la app (ya están en
+      // cobros de cuotas y pagos a profesores).
+      prisma.incomeEntry.findMany({
+        where: { date: { gte: start }, category: { managedByApp: false } },
+        select: { date: true, amount: true },
+      }),
+      prisma.expenseEntry.findMany({
+        where: { date: { gte: start }, category: { managedByApp: false } },
+        select: { date: true, amount: true },
+      }),
+      prisma.studentPayment.findMany({
+        where: { paidAt: { gte: start } },
+        select: { paidAt: true, amount: true },
+      }),
+      prisma.studentFee.findMany({
+        where: { yearMonth: { in: [...months] } },
+        select: { yearMonth: true, totalAmount: true },
+      }),
+      prisma.teacherPayout.findMany({
+        where: { yearMonth: { in: [...months] } },
+        select: { yearMonth: true, amountPaid: true },
+      }),
     ]);
 
     const incomeByMonth = zeroed();
@@ -93,15 +104,15 @@ export async function dashboardRoutes(app: FastifyInstance) {
     const payoutsPaidByMonth = zeroed();
 
     for (const row of incomes) {
-      const key = `${row.date.getFullYear()}-${String(row.date.getMonth() + 1).padStart(2, "0")}`;
+      const key = calendarDateOf(row.date).slice(0, 7);
       if (monthSet.has(key)) incomeByMonth[key] = (incomeByMonth[key] ?? 0) + row.amount;
     }
     for (const row of expenses) {
-      const key = `${row.date.getFullYear()}-${String(row.date.getMonth() + 1).padStart(2, "0")}`;
+      const key = calendarDateOf(row.date).slice(0, 7);
       if (monthSet.has(key)) expenseByMonth[key] = (expenseByMonth[key] ?? 0) + row.amount;
     }
     for (const row of studentPayments) {
-      const key = `${row.paidAt.getFullYear()}-${String(row.paidAt.getMonth() + 1).padStart(2, "0")}`;
+      const key = yearMonthOf(row.paidAt);
       if (monthSet.has(key)) feesCollectedByMonth[key] = (feesCollectedByMonth[key] ?? 0) + row.amount;
     }
     for (const row of studentFees) {
@@ -117,11 +128,11 @@ export async function dashboardRoutes(app: FastifyInstance) {
 
     return months.map((month) => ({
       month,
-      income: Math.round((incomeByMonth[month] ?? 0) * 100) / 100,
-      expenses: Math.round((expenseByMonth[month] ?? 0) * 100) / 100,
-      feesIssued: Math.round((feesIssuedByMonth[month] ?? 0) * 100) / 100,
-      feesCollected: Math.round((feesCollectedByMonth[month] ?? 0) * 100) / 100,
-      teacherPayoutsPaid: Math.round((payoutsPaidByMonth[month] ?? 0) * 100) / 100,
+      income: fromCents(incomeByMonth[month] ?? 0),
+      expenses: fromCents(expenseByMonth[month] ?? 0),
+      feesIssued: fromCents(feesIssuedByMonth[month] ?? 0),
+      feesCollected: fromCents(feesCollectedByMonth[month] ?? 0),
+      teacherPayoutsPaid: fromCents(payoutsPaidByMonth[month] ?? 0),
     }));
   });
 
@@ -145,14 +156,14 @@ export async function dashboardRoutes(app: FastifyInstance) {
         date: i.date,
         concept: i.concept,
         category: i.category.name,
-        amount: i.amount,
+        amount: fromCents(i.amount),
       })),
       ...expenses.map((e) => ({
         type: "expense" as const,
         date: e.date,
         concept: e.concept,
         category: e.category.name,
-        amount: e.amount,
+        amount: fromCents(e.amount),
       })),
     ]
       .sort((a, b) => b.date.getTime() - a.date.getTime())
@@ -176,11 +187,21 @@ export async function dashboardRoutes(app: FastifyInstance) {
       classesNoSchedule,
     ] = await Promise.all([
         previewFeesForMonth(yearMonth),
+        // Todas las pendientes de alumnos activos (antes se cortaba a 200 y se filtraba
+        // después, así que el recuento y el total podían salir por debajo).
         prisma.studentFee.findMany({
-          where: { status: { in: ["PENDING", "PARTIAL"] } },
-          include: { student: { select: { firstName: true, lastName: true, status: true, deletedAt: true } } },
-          orderBy: { yearMonth: "desc" },
-          take: 200,
+          where: {
+            status: { in: ["PENDING", "PARTIAL"] },
+            student: { deletedAt: null, status: "ACTIVE" },
+          },
+          select: {
+            id: true,
+            studentId: true,
+            yearMonth: true,
+            totalAmount: true,
+            amountPaid: true,
+            student: { select: { firstName: true, lastName: true } },
+          },
         }),
         prisma.teacherPayout.findMany({
           where: { yearMonth, status: { in: ["PENDING", "PARTIAL"] } },
@@ -199,16 +220,15 @@ export async function dashboardRoutes(app: FastifyInstance) {
           take: 10,
           select: { id: true, firstName: true, lastName: true },
         }),
-        prisma.classGroup.count({ where: { scheduleSlots: { none: {} } } }),
+        prisma.classGroup.count({ where: { deletedAt: null, scheduleSlots: { none: {} } } }),
         prisma.classGroup.findMany({
-          where: { scheduleSlots: { none: {} } },
+          where: { deletedAt: null, scheduleSlots: { none: {} } },
           include: { teacher: { select: { firstName: true, lastName: true } } },
           take: 10,
         }),
       ]);
 
     const unpaidAll = unpaidFees
-      .filter((f) => !f.student.deletedAt && f.student.status === "ACTIVE")
       .map((f) => ({
         id: f.id,
         studentId: f.studentId,
@@ -216,7 +236,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
         yearMonth: f.yearMonth,
         pending: Math.max(0, f.totalAmount - f.amountPaid),
       }))
-      .filter((f) => f.pending > 0.001)
+      .filter((f) => f.pending > 0)
       .sort((a, b) => b.pending - a.pending);
 
     const withoutFeeAll = feePreview.rows.filter((r) => r.totalAmount > 0 && !r.existingFeeId);
@@ -228,22 +248,22 @@ export async function dashboardRoutes(app: FastifyInstance) {
         items: withoutFeeAll.slice(0, 8).map((r) => ({
           studentId: r.studentId,
           studentName: r.studentName,
-          totalAmount: r.totalAmount,
+          totalAmount: fromCents(r.totalAmount),
         })),
       },
       unpaidFees: {
         count: unpaidAll.length,
-        totalPending: unpaidAll.reduce((s, f) => s + f.pending, 0),
-        items: unpaidAll.slice(0, 10),
+        totalPending: fromCents(unpaidAll.reduce((s, f) => s + f.pending, 0)),
+        items: unpaidAll.slice(0, 10).map((f) => ({ ...f, pending: fromCents(f.pending) })),
       },
       pendingPayouts: {
         count: pendingPayouts.length,
-        totalPending: pendingPayouts.reduce((s, p) => s + (p.amount - p.amountPaid), 0),
+        totalPending: fromCents(pendingPayouts.reduce((s, p) => s + (p.amount - p.amountPaid), 0)),
         items: pendingPayouts.map((p) => ({
           id: p.id,
           teacherName: `${p.teacher.lastName}, ${p.teacher.firstName}`,
           yearMonth: p.yearMonth,
-          pending: p.amount - p.amountPaid,
+          pending: fromCents(p.amount - p.amountPaid),
         })),
       },
       studentsWithoutTeacher: {
@@ -268,7 +288,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
     const { ym } = monthBounds();
     const fees = await prisma.studentFee.findMany({
       where: { yearMonth: ym, status: { in: ["PENDING", "PARTIAL"] } },
-      include: { student: true },
+      include: { student: { select: { firstName: true, lastName: true } } },
       orderBy: { dueDate: "asc" },
       take: 20,
     });
@@ -276,7 +296,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
       id: f.id,
       studentName: `${f.student.firstName} ${f.student.lastName}`,
       dueDate: f.dueDate,
-      pending: f.totalAmount - f.amountPaid,
+      pending: fromCents(f.totalAmount - f.amountPaid),
       status: f.status,
     }));
   });

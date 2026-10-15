@@ -1,27 +1,28 @@
 import { FEE_STATUS_LABELS, PAYMENT_METHOD_LABELS } from "@finband/shared";
 import { FileText, Trash2 } from "lucide-react";
-import { Badge, feeStatusBadge } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
+import { feeStatusBadge } from "@/lib/status";
 import { Button } from "@/components/ui/button";
 import { downloadUrl } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/utils";
 
-type Payment = {
+export type StudentPaymentRow = {
   id: string;
   amount: number;
   method: string;
   paidAt: string;
 };
 
-type Fee = {
+export type StudentFeeRow = {
   id: string;
   yearMonth: string;
   totalAmount: number;
   amountPaid: number;
   status: keyof typeof FEE_STATUS_LABELS;
-  payments: Payment[];
+  payments: StudentPaymentRow[];
 };
 
-type Discount = {
+export type StudentDiscountRow = {
   id: string;
   name: string;
   type: string;
@@ -29,8 +30,8 @@ type Discount = {
 };
 
 type Props = {
-  fees: Fee[];
-  discounts: Discount[];
+  fees: StudentFeeRow[];
+  discounts: StudentDiscountRow[];
   isAdmin: boolean;
   onDeleteFee?: (feeId: string) => void;
   deleteFeePending?: boolean;

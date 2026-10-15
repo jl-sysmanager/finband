@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { PAYMENT_METHOD_LABELS, type PaymentMethod } from "@finband/shared";
+import { PAYMENT_METHOD_LABELS } from "@finband/shared";
 import {
   createPdf,
   drawMetaGrid,
@@ -8,6 +8,7 @@ import {
   finalizeProfessionalPdf,
   formatEuro,
 } from "../lib/pdf-template.js";
+import { fromCents } from "../lib/money.js";
 import { prisma } from "../lib/prisma.js";
 
 function sendPdf(reply: FastifyReply, filename: string, buffer: Buffer) {
@@ -17,7 +18,16 @@ function sendPdf(reply: FastifyReply, filename: string, buffer: Buffer) {
     .send(buffer);
 }
 
+/** Los importes de la base están en céntimos; el PDF muestra euros. */
+const euro = (cents: number) => formatEuro(fromCents(cents));
+
 const METHOD_LABELS = PAYMENT_METHOD_LABELS as Record<string, string>;
+
+const PAYOUT_STATUS_LABELS: Record<string, string> = {
+  PENDING: "Pendiente",
+  PARTIAL: "Parcial",
+  PAID: "Pagado",
+};
 
 export async function receiptRoutes(app: FastifyInstance) {
   app.get("/student-payment/:id", async (request: FastifyRequest, reply: FastifyReply) => {
@@ -52,21 +62,21 @@ export async function receiptRoutes(app: FastifyInstance) {
 
         const rows: string[][] = [];
         for (const li of lineItems) {
-          rows.push([li.label, formatEuro(li.amount)]);
+          rows.push([li.label, euro(li.amount)]);
         }
         rows.push(
-          ["Cuota base", formatEuro(payment.fee.baseAmount)],
-          ["Descuentos", `- ${formatEuro(payment.fee.discountAmount)}`],
-          ["Total cuota", formatEuro(payment.fee.totalAmount)],
-          ["Pagado acumulado", formatEuro(payment.fee.amountPaid)],
+          ["Cuota base", euro(payment.fee.baseAmount)],
+          ["Descuentos", `- ${euro(payment.fee.discountAmount)}`],
+          ["Total cuota", euro(payment.fee.totalAmount)],
+          ["Pagado acumulado", euro(payment.fee.amountPaid)],
           [
             "Pendiente",
-            formatEuro(Math.max(0, payment.fee.totalAmount - payment.fee.amountPaid)),
+            euro(Math.max(0, payment.fee.totalAmount - payment.fee.amountPaid)),
           ],
         );
 
         drawTable(d, ["Concepto", "Importe"], rows, { alignRightFrom: 1 });
-        drawTotalBar(d, "Importe de este recibo", payment.amount);
+        drawTotalBar(d, "Importe de este recibo", fromCents(payment.amount));
         if (payment.notes) {
           d.font("Helvetica").fontSize(9).fillColor("#64748b").text(`Observaciones: ${payment.notes}`);
         }
@@ -81,7 +91,7 @@ export async function receiptRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const payout = await prisma.teacherPayout.findUnique({
       where: { id },
-      include: { teacher: true },
+      include: { teacher: true, payments: { orderBy: { paidAt: "asc" } } },
     });
     if (!payout) return reply.status(404).send({ error: "Liquidación no encontrada" });
 
@@ -95,7 +105,7 @@ export async function receiptRoutes(app: FastifyInstance) {
           ["Profesor", `${teacher.firstName} ${teacher.lastName}`],
           ["Periodo", payout.yearMonth],
           ["Especialidad", teacher.specialty ?? "—"],
-          ["Estado", payout.status],
+          ["Estado", PAYOUT_STATUS_LABELS[payout.status] ?? payout.status],
         ]);
 
         d.font("Helvetica-Bold").fontSize(11).text("Desglose");
@@ -105,19 +115,30 @@ export async function receiptRoutes(app: FastifyInstance) {
           d,
           ["Concepto", "Importe"],
           [
-            ["Remuneración base", formatEuro(payout.baseAmount)],
+            ["Remuneración base", euro(payout.baseAmount)],
             [
               `Transporte (${payout.workDays} jornadas)`,
-              formatEuro(payout.transportAmount),
+              euro(payout.transportAmount),
             ],
-            ["Total liquidación", formatEuro(payout.amount)],
-            ["Pagado", formatEuro(payout.amountPaid)],
-            ["Pendiente", formatEuro(Math.max(0, payout.amount - payout.amountPaid))],
+            ["Total liquidación", euro(payout.amount)],
+            ["Pagado", euro(payout.amountPaid)],
+            ["Pendiente", euro(Math.max(0, payout.amount - payout.amountPaid))],
           ],
           { alignRightFrom: 1 },
         );
 
-        drawTotalBar(d, "Total a abonar (mes)", payout.amount);
+        drawTotalBar(d, "Total a abonar (mes)", fromCents(payout.amount));
+
+        if (payout.payments.length > 0) {
+          d.font("Helvetica-Bold").fontSize(11).fillColor("#0f172a").text("Pagos realizados");
+          d.moveDown(0.3);
+          drawTable(
+            d,
+            ["Fecha", "Importe"],
+            payout.payments.map((p) => [p.paidAt.toLocaleDateString("es-ES"), euro(p.amount)]),
+            { alignRightFrom: 1 },
+          );
+        }
 
         d
           .font("Helvetica")

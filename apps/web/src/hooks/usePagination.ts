@@ -1,7 +1,17 @@
 import { useMemo, useState } from "react";
 
-export function usePagination<T>(items: T[], pageSize = 15) {
-  const [page, setPage] = useState(1);
+/**
+ * Paginación en cliente. `resetKey` resume los filtros activos: cuando cambia,
+ * se vuelve a la primera página (si no, un filtro nuevo podía dejar al usuario
+ * en una página vacía o a mitad de resultados).
+ */
+export function usePagination<T>(items: T[], pageSize = 15, resetKey?: unknown) {
+  const [state, setState] = useState({ page: 1, key: resetKey });
+  const page = Object.is(state.key, resetKey) ? state.page : 1;
+  if (!Object.is(state.key, resetKey)) {
+    // Ajuste durante el render (patrón recomendado por React para estado derivado).
+    setState({ page: 1, key: resetKey });
+  }
 
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
 
@@ -13,11 +23,11 @@ export function usePagination<T>(items: T[], pageSize = 15) {
   }, [items, safePage, pageSize]);
 
   function goTo(p: number) {
-    setPage(Math.max(1, Math.min(totalPages, p)));
+    setState({ page: Math.max(1, Math.min(totalPages, p)), key: resetKey });
   }
 
   function reset() {
-    setPage(1);
+    setState({ page: 1, key: resetKey });
   }
 
   return {

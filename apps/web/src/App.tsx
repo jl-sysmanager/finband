@@ -1,26 +1,30 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { Suspense, useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppShell } from "@/components/layout/AppShell";
-import { ClassDetailPage } from "@/pages/ClassDetailPage";
-import { ClassesPage } from "@/pages/ClassesPage";
-import { DashboardPage } from "@/pages/DashboardPage";
-import { FinancePage } from "@/pages/FinancePage";
 import { LoginPage } from "@/pages/LoginPage";
-import { PaymentsPage } from "@/pages/PaymentsPage";
-import { ReportsPage } from "@/pages/ReportsPage";
-import { SettingsPage } from "@/pages/SettingsPage";
-import { StudentDetailPage } from "@/pages/StudentDetailPage";
-import { StudentsPage } from "@/pages/StudentsPage";
-import { TariffsPage } from "@/pages/TariffsPage";
-import { TeacherDetailPage } from "@/pages/TeacherDetailPage";
-import { TeachersPage } from "@/pages/TeachersPage";
 import { useAuth } from "@/stores/auth";
 import { useTheme } from "@/stores/theme";
 import { Toaster } from "@/components/feedback/Toaster";
+import { lazyPage } from "@/lib/lazy-page";
+import { queryClient } from "@/lib/query-client";
 
-const queryClient = new QueryClient();
+// Cada página se descarga al visitarla (recharts, exceljs de informes, etc. no van
+// en el paquete inicial). El login va incluido para que la primera pantalla sea inmediata.
+const ClassDetailPage = lazyPage(() => import("@/pages/ClassDetailPage"), "ClassDetailPage");
+const ClassesPage = lazyPage(() => import("@/pages/ClassesPage"), "ClassesPage");
+const DashboardPage = lazyPage(() => import("@/pages/DashboardPage"), "DashboardPage");
+const FinancePage = lazyPage(() => import("@/pages/FinancePage"), "FinancePage");
+const PaymentsPage = lazyPage(() => import("@/pages/PaymentsPage"), "PaymentsPage");
+const ReportsPage = lazyPage(() => import("@/pages/ReportsPage"), "ReportsPage");
+const SettingsPage = lazyPage(() => import("@/pages/SettingsPage"), "SettingsPage");
+const StudentDetailPage = lazyPage(() => import("@/pages/StudentDetailPage"), "StudentDetailPage");
+const StudentsPage = lazyPage(() => import("@/pages/StudentsPage"), "StudentsPage");
+const TariffsPage = lazyPage(() => import("@/pages/TariffsPage"), "TariffsPage");
+const TeacherDetailPage = lazyPage(() => import("@/pages/TeacherDetailPage"), "TeacherDetailPage");
+const TeachersPage = lazyPage(() => import("@/pages/TeachersPage"), "TeachersPage");
+
 
 function AuthBootstrap({ children }: { children: React.ReactNode }) {
   const fetchMe = useAuth((s) => s.fetchMe);
@@ -38,6 +42,13 @@ export default function App() {
       <BrowserRouter>
         <AuthBootstrap>
           <Toaster />
+          <Suspense
+            fallback={
+              <div className="flex min-h-[50vh] items-center justify-center text-sm text-muted-foreground">
+                Cargando…
+              </div>
+            }
+          >
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route element={<ProtectedRoute />}>
@@ -59,6 +70,7 @@ export default function App() {
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
         </AuthBootstrap>
       </BrowserRouter>
     </QueryClientProvider>

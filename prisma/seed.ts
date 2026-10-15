@@ -7,8 +7,13 @@ import {
   UserRole,
 } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { randomBytes } from "node:crypto";
 
 const prisma = new PrismaClient();
+
+/** Los importes se guardan en céntimos y los porcentajes en centésimas (10 % → 1000). */
+const eur = (euros: number) => Math.round(euros * 100);
+const pct = (percent: number) => Math.round(percent * 100);
 
 function yearMonth(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -18,30 +23,39 @@ function monthStart(d = new Date()) {
   return new Date(d.getFullYear(), d.getMonth(), 1);
 }
 
+/** En producción nunca se usa una contraseña conocida: si no se define, se genera una. */
+function resolveAdminPassword(): { password: string; generated: boolean } {
+  const fromEnv = process.env.ADMIN_PASSWORD?.trim();
+  if (fromEnv) {
+    if (process.env.NODE_ENV === "production" && fromEnv === "admin123") {
+      console.warn("AVISO: ADMIN_PASSWORD usa el valor de ejemplo; cámbielo cuanto antes.");
+    }
+    return { password: fromEnv, generated: false };
+  }
+  if (process.env.NODE_ENV !== "production") return { password: "admin123", generated: false };
+  return { password: randomBytes(12).toString("base64url"), generated: true };
+}
+
 async function seedBase() {
-  const adminUser = process.env.ADMIN_USERNAME ?? "admin";
-  const adminPass = process.env.ADMIN_PASSWORD ?? "admin123";
-  const hash = await bcrypt.hash(adminPass, 10);
-
-  await prisma.user.upsert({
-    where: { username: adminUser },
-    update: {},
-    create: {
-      username: adminUser,
-      passwordHash: hash,
-      role: UserRole.ADMIN,
-    },
-  });
-
-  await prisma.user.upsert({
-    where: { username: "consulta" },
-    update: {},
-    create: {
-      username: "consulta",
-      passwordHash: await bcrypt.hash("consulta123", 10),
-      role: UserRole.READONLY,
-    },
-  });
+  const adminUser = process.env.ADMIN_USERNAME?.trim() || "admin";
+  const adminExists = await prisma.user.findUnique({ where: { username: adminUser } });
+  if (!adminExists) {
+    const { password, generated } = resolveAdminPassword();
+    await prisma.user.create({
+      data: {
+        username: adminUser,
+        passwordHash: await bcrypt.hash(password, 10),
+        role: UserRole.ADMIN,
+      },
+    });
+    if (generated) {
+      console.log("==============================================================");
+      console.log(`Usuario administrador creado: ${adminUser}`);
+      console.log(`Contraseña generada: ${password}`);
+      console.log("Guárdela y cámbiela desde Ajustes > Usuarios.");
+      console.log("==============================================================");
+    }
+  }
 
   const year = await prisma.academicYear.upsert({
     where: { id: "default-year" },
@@ -81,11 +95,17 @@ async function seedBase() {
     "Conciertos",
     "Donaciones",
   ];
+  // Categorías cuyos movimientos registra la propia app (cobros de cuotas / pagos a
+  // profesores): no admiten apuntes manuales para no duplicarlos en el balance.
+  const managedIncome = new Set(["Cuotas mensuales"]);
+  const managedExpense = new Set(["Profesores"]);
+
   for (let i = 0; i < incomeCats.length; i++) {
+    const managedByApp = managedIncome.has(incomeCats[i]!);
     await prisma.incomeCategory.upsert({
       where: { name: incomeCats[i]! },
-      update: {},
-      create: { name: incomeCats[i]!, sortOrder: i },
+      update: { managedByApp },
+      create: { name: incomeCats[i]!, sortOrder: i, managedByApp },
     });
   }
 
@@ -98,16 +118,28 @@ async function seedBase() {
     "Otros",
   ];
   for (let i = 0; i < expenseCats.length; i++) {
+    const managedByApp = managedExpense.has(expenseCats[i]!);
     await prisma.expenseCategory.upsert({
       where: { name: expenseCats[i]! },
-      update: {},
-      create: { name: expenseCats[i]!, sortOrder: i },
+      update: { managedByApp },
+      create: { name: expenseCats[i]!, sortOrder: i, managedByApp },
     });
   }
 }
 
 async function seedMock() {
   if (process.env.SEED_MOCK === "false") return;
+
+  // Usuario de demostración con contraseña conocida: solo junto a los datos mock.
+  await prisma.user.upsert({
+    where: { username: "consulta" },
+    update: {},
+    create: {
+      username: "consulta",
+      passwordHash: await bcrypt.hash("consulta123", 10),
+      role: UserRole.READONLY,
+    },
+  });
 
   const existing = await prisma.student.count({ where: { id: { startsWith: "mock-" } } });
   const skipEntities = existing > 0;
@@ -128,11 +160,11 @@ async function seedMock() {
       email: "l.martinez@finband.local",
       phone: "+34 600 111 001",
       specialty: "Piano",
-      hourlyRate: 28,
+      hourlyRate: eur(28),
       weeklyHours: 18,
-      monthlySalary: 1800,
-      costPerClass: 32,
-      transportCostPerDay: 6.5,
+      monthlySalary: eur(1800),
+      costPerClass: eur(32),
+      transportCostPerDay: eur(6.5),
     },
   });
 
@@ -146,10 +178,10 @@ async function seedMock() {
       email: "c.ruiz@finband.local",
       phone: "+34 600 111 002",
       specialty: "Guitarra",
-      hourlyRate: 25,
+      hourlyRate: eur(25),
       weeklyHours: 16,
-      costPerClass: 28,
-      transportCostPerDay: 5,
+      costPerClass: eur(28),
+      transportCostPerDay: eur(5),
     },
   });
 
@@ -162,10 +194,10 @@ async function seedMock() {
       lastName: "Vega",
       email: "e.vega@finband.local",
       specialty: "Lenguaje musical",
-      hourlyRate: 22,
+      hourlyRate: eur(22),
       weeklyHours: 12,
-      costPerClass: 24,
-      transportCostPerDay: 4.5,
+      costPerClass: eur(24),
+      transportCostPerDay: eur(4.5),
     },
   });
 
@@ -175,7 +207,7 @@ async function seedMock() {
       name: "Piano individual",
       instrument: "Piano",
       classType: ClassType.INDIVIDUAL,
-      amount: 75,
+      amount: eur(75),
       priority: 10,
     },
     {
@@ -183,21 +215,21 @@ async function seedMock() {
       name: "Guitarra individual",
       instrument: "Guitarra",
       classType: ClassType.INDIVIDUAL,
-      amount: 65,
+      amount: eur(65),
       priority: 10,
     },
     {
       id: "mock-tariff-3",
       name: "Lenguaje colectivo",
       classType: ClassType.LENGUAJE,
-      amount: 35,
+      amount: eur(35),
       priority: 5,
     },
     {
       id: "mock-tariff-4",
       name: "Banda",
       classType: ClassType.BANDA,
-      amount: 40,
+      amount: eur(40),
       priority: 5,
     },
   ] as const;
@@ -373,7 +405,7 @@ async function seedMock() {
       studentId: s1.id,
       name: "Descuento familiar (2º hermano)",
       type: "PERCENT",
-      value: 10,
+      value: pct(10),
       active: true,
     },
   });
@@ -386,7 +418,7 @@ async function seedMock() {
       studentId: s3.id,
       name: "Beca parcial",
       type: "FIXED",
-      value: 15,
+      value: eur(15),
       isScholarship: true,
       active: true,
     },
@@ -398,15 +430,15 @@ async function seedMock() {
       id: "mock-fee-1",
       studentId: s1.id,
       yearMonth: ym,
-      baseAmount: 110,
-      discountAmount: 11,
-      totalAmount: 99,
-      amountPaid: 99,
+      baseAmount: eur(110),
+      discountAmount: eur(11),
+      totalAmount: eur(99),
+      amountPaid: eur(99),
       status: FeeStatus.PAID,
       dueDate: due,
       lineItems: JSON.stringify([
-        { label: "Piano individual", amount: 75 },
-        { label: "Lenguaje colectivo", amount: 35 },
+        { label: "Piano individual", amount: eur(75) },
+        { label: "Lenguaje colectivo", amount: eur(35) },
       ]),
     },
     update: {},
@@ -418,7 +450,7 @@ async function seedMock() {
     create: {
       id: "mock-pay-1",
       feeId: feeLucia.id,
-      amount: 99,
+      amount: eur(99),
       method: PaymentMethod.BIZUM,
       paidAt: monthStart(),
     },
@@ -430,10 +462,10 @@ async function seedMock() {
       id: "mock-fee-2",
       studentId: s2.id,
       yearMonth: ym,
-      baseAmount: 105,
-      discountAmount: 0,
-      totalAmount: 105,
-      amountPaid: 50,
+      baseAmount: eur(105),
+      discountAmount: eur(0),
+      totalAmount: eur(105),
+      amountPaid: eur(50),
       status: FeeStatus.PARTIAL,
       dueDate: due,
     },
@@ -446,7 +478,7 @@ async function seedMock() {
     create: {
       id: "mock-pay-2",
       feeId: feeHugo.id,
-      amount: 50,
+      amount: eur(50),
       method: PaymentMethod.TRANSFERENCIA,
       paidAt: monthStart(),
     },
@@ -458,10 +490,10 @@ async function seedMock() {
       id: "mock-fee-3",
       studentId: s3.id,
       yearMonth: ym,
-      baseAmount: 110,
-      discountAmount: 15,
-      totalAmount: 95,
-      amountPaid: 0,
+      baseAmount: eur(110),
+      discountAmount: eur(15),
+      totalAmount: eur(95),
+      amountPaid: eur(0),
       status: FeeStatus.PENDING,
       dueDate: due,
     },
@@ -474,58 +506,25 @@ async function seedMock() {
       id: "mock-fee-4",
       studentId: s4.id,
       yearMonth: ym,
-      baseAmount: 100,
-      discountAmount: 0,
-      totalAmount: 100,
-      amountPaid: 0,
+      baseAmount: eur(100),
+      discountAmount: eur(0),
+      totalAmount: eur(100),
+      amountPaid: eur(0),
       status: FeeStatus.PENDING,
       dueDate: due,
     },
     update: {},
   });
 
-  const incomeCuotas = await prisma.incomeCategory.findFirst({
-    where: { name: "Cuotas mensuales" },
-  });
   const incomeMat = await prisma.incomeCategory.findFirst({
     where: { name: "Matrículas" },
-  });
-  const expProf = await prisma.expenseCategory.findFirst({
-    where: { name: "Profesores" },
   });
   const expMat = await prisma.expenseCategory.findFirst({
     where: { name: "Material didáctico" },
   });
 
   const today = new Date();
-  if (incomeCuotas) {
-    const incomes = [
-      {
-        id: "mock-income-1",
-        date: monthStart(),
-        concept: "Cuota Lucía García",
-        categoryId: incomeCuotas.id,
-        amount: 99,
-        method: PaymentMethod.BIZUM,
-      },
-      {
-        id: "mock-income-2",
-        date: new Date(today.getFullYear(), today.getMonth(), 8),
-        concept: "Cuota parcial Hugo López",
-        categoryId: incomeCuotas.id,
-        amount: 50,
-        method: PaymentMethod.TRANSFERENCIA,
-      },
-    ] as const;
-    for (const row of incomes) {
-      await prisma.incomeEntry.upsert({
-        where: { id: row.id },
-        create: row,
-        update: {},
-      });
-    }
-  }
-
+  // Los cobros de cuotas no se apuntan a mano: salen de los cobros registrados.
   if (incomeMat) {
     await prisma.incomeEntry.upsert({
       where: { id: "mock-income-3" },
@@ -534,28 +533,22 @@ async function seedMock() {
         date: new Date(today.getFullYear(), today.getMonth(), 3),
         concept: "Matrícula Sofía Navarro",
         categoryId: incomeMat.id,
-        amount: 45,
+        amount: eur(45),
         method: PaymentMethod.EFECTIVO,
       },
       update: {},
     });
   }
 
-  if (expProf && expMat) {
+  // Los pagos a profesores tampoco: salen de las liquidaciones.
+  if (expMat) {
     const expenses = [
-      {
-        id: "mock-expense-1",
-        date: monthStart(),
-        concept: "Nómina Laura Martínez (anticipo)",
-        categoryId: expProf.id,
-        amount: 900,
-      },
       {
         id: "mock-expense-2",
         date: new Date(today.getFullYear(), today.getMonth(), 10),
         concept: "Partituras y métodos",
         categoryId: expMat.id,
-        amount: 128.5,
+        amount: eur(128.5),
       },
     ] as const;
     for (const row of expenses) {
@@ -571,7 +564,7 @@ async function seedMock() {
     "../apps/api/src/lib/teacher-payout.js"
   );
   const mockPayoutPaid: Record<string, number> = {
-    [t1.id]: 900,
+    [t1.id]: eur(900),
     [t2.id]: 0,
   };
   for (const teacherId of [t1.id, t2.id, t3.id]) {
@@ -602,6 +595,26 @@ async function seedMock() {
         amount: calc.amount,
       },
     });
+    // Lo pagado sale del historial de pagos (igual que en la app).
+    if (amountPaid > 0) {
+      const payout = await prisma.teacherPayout.findUniqueOrThrow({
+        where: { teacherId_yearMonth: { teacherId, yearMonth: ym } },
+      });
+      await prisma.teacherPayoutPayment.upsert({
+        where: { id: `mock-payout-payment-${teacherId}` },
+        create: {
+          id: `mock-payout-payment-${teacherId}`,
+          payoutId: payout.id,
+          amount: amountPaid,
+          paidAt: monthStart(),
+        },
+        update: {},
+      });
+      await prisma.teacherPayout.update({
+        where: { id: payout.id },
+        data: { paidAt: monthStart() },
+      });
+    }
   }
 
   const session = await prisma.attendanceSession.upsert({

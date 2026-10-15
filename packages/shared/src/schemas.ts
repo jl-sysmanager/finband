@@ -1,10 +1,37 @@
 import { z } from "zod";
+import { eurosToCents } from "./money.js";
 import {
   CLASS_TYPES,
   PAYMENT_METHODS,
   STUDENT_STATUSES,
   USER_ROLES,
 } from "./enums.js";
+
+/**
+ * Importe en euros con, como mucho, dos decimales. El resultado del parseo son
+ * céntimos enteros: la API trabaja siempre en céntimos.
+ */
+const euros = () =>
+  z
+    .number()
+    .finite()
+    .refine((n) => Math.abs(Math.round(n * 100) - n * 100) < 1e-6, {
+      message: "El importe admite como máximo dos decimales",
+    });
+
+export const positiveAmountSchema = euros()
+  .refine((n) => n > 0, { message: "El importe debe ser positivo" })
+  .transform(eurosToCents);
+
+export const nonNegativeAmountSchema = euros()
+  .refine((n) => n >= 0, { message: "El importe no puede ser negativo" })
+  .transform(eurosToCents);
+
+/**
+ * Valor de un descuento: euros si es FIXED, porcentaje si es PERCENT. En ambos
+ * casos se guarda en centésimas de su unidad (15 € → 1500, 12,5 % → 1250).
+ */
+const discountValueSchema = nonNegativeAmountSchema;
 
 export const loginSchema = z.object({
   username: z.string().min(1, "Usuario requerido"),
@@ -50,11 +77,11 @@ export const teacherSchema = z.object({
   phone: z.string().optional().nullable(),
   email: z.string().email().optional().nullable().or(z.literal("")),
   specialty: z.string().optional().nullable(),
-  hourlyRate: z.number().min(0),
-  monthlySalary: z.number().min(0).optional().nullable(),
-  costPerClass: z.number().min(0).optional().nullable(),
+  hourlyRate: nonNegativeAmountSchema,
+  monthlySalary: nonNegativeAmountSchema.optional().nullable(),
+  costPerClass: nonNegativeAmountSchema.optional().nullable(),
   weeklyHours: z.number().min(0).optional().nullable(),
-  transportCostPerDay: z.number().min(0).optional(),
+  transportCostPerDay: nonNegativeAmountSchema.optional(),
 });
 
 export const studentSchema = z.object({
@@ -69,7 +96,7 @@ export const studentSchema = z.object({
   mainInstrument: z.string().optional().nullable(),
   level: z.string().optional().nullable(),
   primaryTeacherId: z.string().optional().nullable(),
-  monthlyFee: z.number().min(0).optional().nullable(),
+  monthlyFee: nonNegativeAmountSchema.optional().nullable(),
   status: z.enum(STUDENT_STATUSES).optional(),
 });
 
@@ -101,7 +128,7 @@ export const tariffRuleSchema = z.object({
   instrument: z.string().optional().nullable(),
   level: z.string().optional().nullable(),
   classType: z.enum(CLASS_TYPES).optional().nullable(),
-  amount: z.number().min(0),
+  amount: nonNegativeAmountSchema,
   priority: z.number().int().optional(),
   active: z.boolean().optional(),
 });
@@ -109,7 +136,7 @@ export const tariffRuleSchema = z.object({
 export const studentDiscountSchema = z.object({
   name: z.string().min(1),
   type: z.enum(["PERCENT", "FIXED"]),
-  value: z.number().min(0),
+  value: discountValueSchema,
   isScholarship: z.boolean().optional(),
   validFrom: z.string().optional().nullable(),
   validTo: z.string().optional().nullable(),
@@ -120,7 +147,7 @@ export const incomeEntrySchema = z.object({
   date: z.string().min(1),
   concept: z.string().min(1),
   categoryId: z.string().min(1),
-  amount: z.number().positive(),
+  amount: positiveAmountSchema,
   method: z.enum(PAYMENT_METHODS).optional().nullable(),
   notes: z.string().optional().nullable(),
 });
@@ -129,13 +156,13 @@ export const expenseEntrySchema = z.object({
   date: z.string().min(1),
   concept: z.string().min(1),
   categoryId: z.string().min(1),
-  amount: z.number().positive(),
+  amount: positiveAmountSchema,
   notes: z.string().optional().nullable(),
 });
 
 export const studentPaymentSchema = z.object({
   feeId: z.string().min(1),
-  amount: z.number().positive(),
+  amount: positiveAmountSchema,
   method: z.enum(PAYMENT_METHODS),
   paidAt: z.string().optional(),
   notes: z.string().optional().nullable(),
@@ -143,7 +170,7 @@ export const studentPaymentSchema = z.object({
 
 export const teacherPayoutPaymentSchema = z.object({
   payoutId: z.string().min(1),
-  amount: z.number().positive(),
+  amount: positiveAmountSchema,
   paidAt: z.string().optional(),
   notes: z.string().optional().nullable(),
 });

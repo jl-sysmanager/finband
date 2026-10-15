@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FEE_STATUS_LABELS, PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from "@finband/shared";
+import { FEE_STATUS_LABELS, PAYMENT_METHOD_LABELS } from "@finband/shared";
 import { FileText, Layers, Trash2 } from "lucide-react";
 import { EntityDetailSheet } from "@/components/layout/EntityDetailSheet";
-import { StudentFeeDetailPanel } from "@/components/detail/StudentFeeDetailPanel";
-import { TeacherPayoutDetailPanel } from "@/components/detail/TeacherPayoutDetailPanel";
+import { StudentFeeDetailPanel, type StudentFeeRow } from "@/components/detail/StudentFeeDetailPanel";
+import { TeacherPayoutDetailPanel, type PayoutRow } from "@/components/detail/TeacherPayoutDetailPanel";
 import { BulkFeeGenerateDialog } from "@/components/fees/BulkFeeGenerateDialog";
 import { useMemo, useState } from "react";
 import { CollapsibleSection } from "@/components/list/CollapsibleSection";
@@ -11,19 +11,12 @@ import { TablePagination } from "@/components/list/TablePagination";
 import { usePagination } from "@/hooks/usePagination";
 import { FormSelect } from "@/components/form/FormSelect";
 import { MonthSelect } from "@/components/form/MonthSelect";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { useConfirm } from "@/hooks/useConfirm";
 import { FilterField } from "@/components/list/FilterField";
 import { ListToolbar } from "@/components/list/ListToolbar";
 import { WorkspaceShell } from "@/components/layout/PageShell";
 import { SegmentedControl } from "@/components/layout/SegmentedControl";
-import { feeStatusBadge } from "@/components/ui/badge";
+import { feeStatusBadge } from "@/lib/status";
 import {
   DataTable,
   DataTableHead,
@@ -34,42 +27,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ApiError, api, downloadUrl } from "@/lib/api";
+import { RegisterPaymentDialog } from "@/components/payments/RegisterPaymentDialog";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { invalidateFinanceQueries } from "@/lib/query-invalidation";
 import { buildQuery, currentYearMonth, formatDate, formatMoney } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 
-type StudentPayment = {
-  id: string;
-  amount: number;
-  method: string;
-  paidAt: string;
-};
-
-type StudentFee = {
-  id: string;
-  yearMonth: string;
-  totalAmount: number;
-  amountPaid: number;
-  status: keyof typeof FEE_STATUS_LABELS;
-  student: { firstName: string; lastName: string };
-  payments: StudentPayment[];
-};
-
-type PayoutRow = {
-  id: string;
-  yearMonth: string;
-  amount: number;
-  baseAmount: number;
-  transportAmount: number;
-  workDays: number;
-  amountPaid: number;
-  status: string;
-  paidAt?: string | null;
-  teacher: { firstName: string; lastName: string };
-};
+type StudentFee = StudentFeeRow;
 
 const PAYOUT_STATUS_LABELS: Record<string, string> = {
   PENDING: "Pendiente",
@@ -93,10 +59,6 @@ const PAYOUT_STATUS_FILTER = [
   { value: "PAID", label: "Pagado" },
 ];
 
-const METHOD_OPTIONS = PAYMENT_METHODS.map((m) => ({
-  value: m,
-  label: PAYMENT_METHOD_LABELS[m],
-}));
 
 export function PaymentsPage() {
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
@@ -107,9 +69,6 @@ export function PaymentsPage() {
   const [search, setSearch] = useState("");
   const [feeStatus, setFeeStatus] = useState("");
   const [payoutStatus, setPayoutStatus] = useState("");
-  const [payFeeId, setPayFeeId] = useState("");
-  const [payAmount, setPayAmount] = useState("");
-  const [payMethod, setPayMethod] = useState("EFECTIVO");
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [payOpen, setPayOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -117,17 +76,19 @@ export function PaymentsPage() {
   const [selectedPayoutId, setSelectedPayoutId] = useState<string | null>(null);
   const { confirm, dialog: confirmDialog } = useConfirm();
 
+  const debouncedSearch = useDebouncedValue(search.trim());
+
   const feeQuery = buildQuery({
     monthFrom,
     monthTo,
-    search: search || undefined,
+    search: debouncedSearch || undefined,
     status: feeStatus || undefined,
   });
 
   const payoutQuery = buildQuery({
     monthFrom,
     monthTo,
-    search: search || undefined,
+    search: debouncedSearch || undefined,
     status: payoutStatus || undefined,
   });
 
@@ -141,11 +102,6 @@ export function PaymentsPage() {
     queryFn: () => api<PayoutRow[]>(`/payments/teacher-payouts${payoutQuery}`),
   });
 
-  const selectedFee = useMemo(
-    () => fees.data?.find((f) => f.id === payFeeId),
-    [fees.data, payFeeId],
-  );
-
   const sheetFee = useMemo(
     () => fees.data?.find((f) => f.id === selectedFeeId) ?? null,
     [fees.data, selectedFeeId],
@@ -156,30 +112,10 @@ export function PaymentsPage() {
     [payouts.data, selectedPayoutId],
   );
 
-  const pendingSelected = selectedFee
-    ? Math.max(0, selectedFee.totalAmount - selectedFee.amountPaid)
-    : 0;
-
-  const payFee = useMutation({
-    mutationFn: () =>
-      api<{ id: string }>("/payments/student-payments", {
-        method: "POST",
-        body: JSON.stringify({
-          feeId: payFeeId,
-          amount: Number(payAmount),
-          method: payMethod,
-        }),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["student-fees"] });
-      setPayAmount("");
-    },
-  });
-
   const deletePayment = useMutation({
     mutationFn: (id: string) => api(`/payments/student-payments/${id}`, { method: "DELETE" }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["student-fees"] });
+      invalidateFinanceQueries(qc);
       setDeleteError(null);
     },
   });
@@ -190,52 +126,12 @@ export function PaymentsPage() {
         method: "POST",
         body: JSON.stringify({ yearMonth: monthTo }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["teacher-payouts"] }),
+    onSuccess: () => invalidateFinanceQueries(qc),
   });
 
-  function selectFee(f: StudentFee) {
-    setPayFeeId(f.id);
-    const pending = Math.max(0, f.totalAmount - f.amountPaid);
-    setPayAmount(pending > 0 ? String(pending) : "");
-  }
-
   const feeRows = fees.data ?? [];
-  const feePagination = usePagination(feeRows, 10);
-  const payoutPagination = usePagination(payouts.data ?? [], 10);
-
-  const pendingFeeOptions = useMemo(
-    () =>
-      (fees.data ?? [])
-        .map((f) => {
-          const pending = f.totalAmount - f.amountPaid;
-          if (pending <= 0) return null;
-          return {
-            value: f.id,
-            label: `${f.student.lastName}, ${f.student.firstName} · ${f.yearMonth} · pend. ${formatMoney(pending)}`,
-          };
-        })
-        .filter(Boolean) as { value: string; label: string }[],
-    [fees.data],
-  );
-
-  async function submitPayFee() {
-    try {
-      const data = await payFee.mutateAsync();
-      setPayOpen(false);
-      if (data?.id) {
-        const ok = await confirm({
-          title: "Recibo de cobro",
-          description: "¿Descargar recibo del cobro?",
-          confirmLabel: "Descargar",
-        });
-        if (ok) {
-          window.open(downloadUrl(`/reports/receipts/student-payment/${data.id}`), "_blank");
-        }
-      }
-    } catch {
-      /* mutation error surfaces via payFee.isError if needed */
-    }
-  }
+  const feePagination = usePagination(feeRows, 10, feeQuery);
+  const payoutPagination = usePagination(payouts.data ?? [], 10, payoutQuery);
 
   async function confirmVoidPayment(paymentId: string) {
     const ok = await confirm({
@@ -262,7 +158,10 @@ export function PaymentsPage() {
           <div className="flex flex-wrap gap-2">
             {section === "students" ? (
               <>
-                <Button size="sm" onClick={() => setPayOpen(true)}>
+                <Button
+                  size="sm"
+                  onClick={() => setPayOpen(true)}
+                >
                   Registrar cobro
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)}>
@@ -297,7 +196,7 @@ export function PaymentsPage() {
       >
         {sheetFee ? (
           <StudentFeeDetailPanel
-            key={`${sheetFee.id}-${sheetFee.amountPaid}-${sheetFee.payments.length}`}
+            key={sheetFee.id}
             fee={sheetFee}
             onClose={() => setSelectedFeeId(null)}
             onDeleted={() => setSelectedFeeId(null)}
@@ -317,7 +216,7 @@ export function PaymentsPage() {
       >
         {sheetPayout ? (
           <TeacherPayoutDetailPanel
-            key={`${sheetPayout.id}-${sheetPayout.amountPaid}`}
+            key={sheetPayout.id}
             payout={sheetPayout}
             onClose={() => setSelectedPayoutId(null)}
             onDeleted={() => setSelectedPayoutId(null)}
@@ -373,68 +272,7 @@ export function PaymentsPage() {
 
         {section === "students" ? (
           <CardContent className="space-y-4 pt-6">
-            <Dialog open={payOpen} onOpenChange={setPayOpen}>
-              <DialogContent size="md">
-                <DialogHeader>
-                  <DialogTitle>Registrar cobro</DialogTitle>
-                </DialogHeader>
-                <p className="text-xs text-muted-foreground">
-                  Pendiente:{" "}
-                  <span className="font-medium text-foreground">
-                    {selectedFee
-                      ? `${selectedFee.student.lastName}, ${selectedFee.student.firstName} (${selectedFee.yearMonth}) — ${formatMoney(pendingSelected)}`
-                      : "Selecciona una cuota"}
-                  </span>
-                </p>
-                <div className="grid gap-3">
-                  <div className="space-y-1">
-                    <Label>Cuota</Label>
-                    <FormSelect
-                      value={payFeeId}
-                      onValueChange={(id) => {
-                        setPayFeeId(id);
-                        const f = fees.data?.find((x) => x.id === id);
-                        if (f) selectFee(f);
-                      }}
-                      options={pendingFeeOptions}
-                      placeholder="Seleccionar alumno y mes…"
-                    />
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <Label>Importe</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min={0}
-                        value={payAmount}
-                        onChange={(e) => setPayAmount(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Método</Label>
-                      <FormSelect
-                        value={payMethod}
-                        onValueChange={setPayMethod}
-                        options={METHOD_OPTIONS}
-                      />
-                    </div>
-                  </div>
-                </div>
-                <DialogFooter className="pt-2">
-                  <Button variant="outline" size="sm" onClick={() => setPayOpen(false)}>
-                    Cancelar
-                  </Button>
-                  <Button
-                    size="sm"
-                    disabled={!payFeeId || !payAmount || payFee.isPending}
-                    onClick={() => void submitPayFee()}
-                  >
-                    Registrar
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+            <RegisterPaymentDialog open={payOpen} onOpenChange={setPayOpen} fees={feeRows} />
 
             <DataTable maxBodyHeight="min(42vh, 440px)">
               <DataTableHead>
@@ -513,6 +351,7 @@ export function PaymentsPage() {
                               <DataTableTd className="text-right">
                                 <Button asChild size="icon" variant="ghost">
                                   <a
+                                    aria-label="Descargar recibo"
                                     href={downloadUrl(`/reports/receipts/student-payment/${p.id}`)}
                                     target="_blank"
                                     rel="noreferrer"
@@ -524,6 +363,7 @@ export function PaymentsPage() {
                                   <Button
                                     size="icon"
                                     variant="ghost"
+                                    aria-label="Anular cobro"
                                     onClick={() => void confirmVoidPayment(p.id)}
                                   >
                                     <Trash2 className="h-4 w-4 text-expense" />

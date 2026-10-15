@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MonthSelect } from "@/components/form/MonthSelect";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
+import { Field } from "@/components/form/Field";
 import { ApiError, api } from "@/lib/api";
+import { invalidateFinanceQueries } from "@/lib/query-invalidation";
 import { currentYearMonth, formatMoney } from "@/lib/utils";
 import { useState } from "react";
 
@@ -28,8 +29,8 @@ export function StudentFeeGeneratePanel({
   const [error, setError] = useState<string | null>(null);
 
   const preview = useQuery({
-    queryKey: ["student-fee-preview", studentId],
-    queryFn: () => api<Preview>(`/students/${studentId}/fee-preview`),
+    queryKey: ["student-fee-preview", studentId, yearMonth],
+    queryFn: () => api<Preview>(`/students/${studentId}/fee-preview?yearMonth=${yearMonth}`),
   });
 
   const generate = useMutation({
@@ -45,8 +46,7 @@ export function StudentFeeGeneratePanel({
       } else {
         setMessage(`Cuota de ${data.yearMonth} generada: ${formatMoney(data.totalAmount)}`);
       }
-      qc.invalidateQueries({ queryKey: ["student", studentId] });
-      qc.invalidateQueries({ queryKey: ["student-fees"] });
+      invalidateFinanceQueries(qc);
       onGenerated?.();
     },
     onError: (err) => {
@@ -79,10 +79,9 @@ export function StudentFeeGeneratePanel({
         </div>
       ) : null}
       <div className="flex flex-wrap items-end gap-2">
-        <div className="space-y-1">
-          <Label>Mes</Label>
+        <Field label="Mes">
           <MonthSelect className="min-w-[180px]" value={yearMonth} onChange={setYearMonth} />
-        </div>
+        </Field>
         <Button
           type="button"
           onClick={() => {

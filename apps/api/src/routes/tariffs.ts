@@ -22,7 +22,14 @@ export async function tariffRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
-    return prisma.tariffRule.create({ data: parsed.data });
+    const saved = await prisma.tariffRule.create({ data: parsed.data });
+    await recordAudit(request, {
+      action: "CREATE",
+      entityType: "tariff",
+      entityId: saved.id,
+      details: null,
+    });
+    return saved;
   });
 
   app.patch("/:id", async (request, reply) => {
@@ -31,7 +38,14 @@ export async function tariffRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
-    return prisma.tariffRule.update({ where: { id }, data: parsed.data });
+    const saved = await prisma.tariffRule.update({ where: { id }, data: parsed.data });
+    await recordAudit(request, {
+      action: "UPDATE",
+      entityType: "tariff",
+      entityId: saved.id,
+      details: { fields: Object.keys((request.body ?? {}) as object) },
+    });
+    return saved;
   });
 
   app.delete("/:id", async (request, reply) => {
@@ -51,12 +65,15 @@ export async function tariffRoutes(app: FastifyInstance) {
   });
 
   app.post("/preview", async (request, reply) => {
-    const { studentId } = request.body as { studentId?: string };
+    const { studentId, yearMonth } = request.body as { studentId?: string; yearMonth?: string };
     if (!studentId) {
       return reply.status(400).send({ error: "studentId requerido" });
     }
+    if (yearMonth !== undefined && !/^\d{4}-\d{2}$/.test(yearMonth)) {
+      return reply.status(400).send({ error: "yearMonth inválido (YYYY-MM)" });
+    }
     try {
-      return await calculateStudentMonthlyFee(studentId);
+      return await calculateStudentMonthlyFee(studentId, yearMonth);
     } catch {
       return reply.status(404).send({ error: "Alumno no encontrado" });
     }

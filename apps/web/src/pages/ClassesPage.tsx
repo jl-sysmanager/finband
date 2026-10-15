@@ -22,6 +22,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ApiError, api } from "@/lib/api";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { addDaysIso, buildQuery, mondayOfWeek, todayISO } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -31,6 +32,7 @@ export function ClassesPage() {
   const [view, setView] = useState<"list" | "calendar">("calendar");
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search.trim());
   const [weekAnchor, setWeekAnchor] = useState(todayISO());
   const qc = useQueryClient();
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
@@ -40,7 +42,7 @@ export function ClassesPage() {
   const weekEnd = useMemo(() => addDaysIso(weekStart, 6), [weekStart]);
   const [calendarError, setCalendarError] = useState<string | null>(null);
   const q = useQuery({
-    queryKey: ["classes", search],
+    queryKey: ["classes", debouncedSearch],
     queryFn: () =>
       api<
         Array<{
@@ -53,7 +55,7 @@ export function ClassesPage() {
           _count: { enrollments: number };
           maxStudents: number;
         }>
-      >(`/classes${buildQuery({ search: search || undefined })}`),
+      >(`/classes${buildQuery({ search: debouncedSearch || undefined })}`),
   });
 
   const occurrences = useQuery({

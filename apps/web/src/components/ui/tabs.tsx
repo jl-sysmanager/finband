@@ -35,9 +35,17 @@ export function TabsTrigger({
 
 export function TabsContent({
   className,
+  keepMounted,
   ...props
-}: React.ComponentProps<typeof TabsPrimitive.Content>) {
+}: React.ComponentProps<typeof TabsPrimitive.Content> & {
+  /** Mantiene montado el contenido oculto (necesario si un formulario abarca varias pestañas). */
+  keepMounted?: boolean;
+}) {
   return (
-    <TabsPrimitive.Content className={cn("mt-4 focus-visible:outline-none", className)} {...props} />
+    <TabsPrimitive.Content
+      forceMount={keepMounted ? true : undefined}
+      className={cn("mt-4 focus-visible:outline-none data-[state=inactive]:hidden", className)}
+      {...props}
+    />
   );
 }

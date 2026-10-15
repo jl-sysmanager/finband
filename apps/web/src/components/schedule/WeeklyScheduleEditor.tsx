@@ -1,7 +1,6 @@
 import { WEEKDAYS } from "@finband/shared";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 
 export type ScheduleSlotDraft = {
   dayOfWeek: number;
@@ -30,7 +29,7 @@ export function WeeklyScheduleEditor({ value, onChange, disabled }: Props) {
 
   return (
     <div className="space-y-3">
-      <Label>Horario semanal</Label>
+      <p className="text-sm font-medium">Horario semanal</p>
       {value.length === 0 ? (
         <p className="text-sm text-muted-foreground">Sin franjas horarias definidas.</p>
       ) : (
@@ -67,7 +66,13 @@ export function WeeklyScheduleEditor({ value, onChange, disabled }: Props) {
                 onChange={(e) => update(index, { endTime: e.target.value })}
               />
               {!disabled ? (
-                <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Quitar franja"
+                  onClick={() => remove(index)}
+                >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               ) : null}

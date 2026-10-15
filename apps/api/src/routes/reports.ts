@@ -8,6 +8,7 @@ import {
   finalizeProfessionalPdf,
   formatEuro,
 } from "../lib/pdf-template.js";
+import { fromCents } from "../lib/money.js";
 import { prisma } from "../lib/prisma.js";
 import {
   reportDebtAging,
@@ -17,41 +18,41 @@ import {
   reportStudentsWithoutFee,
 } from "../lib/phase-a-reports.js";
 import { receiptRoutes } from "./receipts.js";
+import { yearMonthOf } from "../lib/dates.js";
+import {
+  balanceByMonth,
+  balanceForMonth,
+  balanceInEuros,
+  balanceReportRows,
+  sumBalances,
+} from "../lib/balance.js";
 
-function defaultYearMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+const defaultYearMonth = () => yearMonthOf();
+
+const monthsOfYear = (year: number) =>
+  Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
+
+/** Los 12 meses que terminan en el actual (informe de evolución). */
+function lastTwelveMonths() {
+  const now = new Date();
+  return Array.from({ length: 12 }, (_, i) => yearMonthOf(new Date(now.getFullYear(), now.getMonth() - 11 + i, 1)));
 }
 
-function monthRange(yearMonth: string) {
-  const [y, m] = yearMonth.split("-").map(Number);
-  const start = new Date(y!, m! - 1, 1);
-  const end = new Date(y!, m!, 0, 23, 59, 59);
-  return { start, end };
-}
+const EXCLUDED_NOTE =
+  "Los apuntes manuales en categorías gestionadas por la app (cobros de cuotas y pagos a profesores) no suman: se toman de los cobros y pagos registrados.";
 
-async function monthlyBalance(yearMonth: string) {
-  const { start, end } = monthRange(yearMonth);
-  const [income, expense, fees] = await Promise.all([
-    prisma.incomeEntry.aggregate({
-      where: { date: { gte: start, lte: end } },
-      _sum: { amount: true },
-    }),
-    prisma.expenseEntry.aggregate({
-      where: { date: { gte: start, lte: end } },
-      _sum: { amount: true },
-    }),
-    prisma.studentPayment.aggregate({
-      where: { paidAt: { gte: start, lte: end } },
-      _sum: { amount: true },
-    }),
-  ]);
-  return {
-    income: income._sum.amount ?? 0,
-    expense: expense._sum.amount ?? 0,
-    feeCollections: fees._sum.amount ?? 0,
-    balance: (income._sum.amount ?? 0) - (expense._sum.amount ?? 0),
-  };
+/** Pagado y pendiente acumulados por persona, agregados en la base. */
+function summarizeByPerson(
+  groups: Array<{ id: string; paid: number; total: number }>,
+  names: Map<string, string>,
+) {
+  return groups
+    .map((g) => ({
+      name: names.get(g.id) ?? "—",
+      paid: fromCents(g.paid),
+      pending: fromCents(g.total - g.paid),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function sendPdf(reply: FastifyReply, filename: string, buffer: Buffer, inline = false) {
@@ -74,18 +75,27 @@ function sendXlsx(reply: FastifyReply, filename: string, buffer: Buffer) {
     .send(buffer);
 }
 
-async function pdfReport(title: string, rows: Array<[string, number]>, reference?: string) {
+async function pdfReport(
+  title: string,
+  rows: Array<[string, number]>,
+  reference?: string,
+  note?: string,
+) {
   const doc = createPdf();
   return finalizeProfessionalPdf(doc, title, async (d) => {
+    // La fila de balance va destacada en la barra final, no repetida en la tabla.
+    const balanceRow = rows.find(([label]) => label.toLowerCase().includes("balance"));
     drawTable(
       d,
       ["Concepto", "Importe"],
-      rows.map(([label, amount]) => [label, formatEuro(amount)]),
+      rows.filter((r) => r !== balanceRow).map(([label, amount]) => [label, formatEuro(amount)]),
       { alignRightFrom: 1 },
     );
-    const balanceRow = rows.find(([label]) => label.toLowerCase().includes("balance"));
     if (balanceRow) {
       drawTotalBar(d, balanceRow[0], balanceRow[1]);
+    }
+    if (note) {
+      d.font("Helvetica").fontSize(9).fillColor("#64748b").text(note);
     }
   }, reference);
 }
@@ -94,34 +104,27 @@ export async function reportRoutes(app: FastifyInstance) {
   await app.register(receiptRoutes, { prefix: "/receipts" });
   app.get("/balance-monthly", async (request: FastifyRequest, reply: FastifyReply) => {
     const q = request.query as { yearMonth?: string; format?: string; inline?: string };
-    const yearMonth =
-      q.yearMonth ??
-      `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
-    const data = await monthlyBalance(yearMonth);
+    const yearMonth = q.yearMonth ?? defaultYearMonth();
+    const cents = await balanceForMonth(yearMonth);
+    const data = balanceInEuros(cents);
+    const rows = balanceReportRows(cents);
 
     if (q.format === "xlsx") {
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet("Balance");
       ws.addRow(["Mes", yearMonth]);
-      ws.addRow(["Ingresos", data.income]);
-      ws.addRow(["Gastos", data.expense]);
-      ws.addRow(["Cobros cuotas", data.feeCollections]);
-      ws.addRow(["Balance", data.balance]);
+      for (const row of rows) ws.addRow(row);
+      if (data.excludedManualIncome || data.excludedManualExpense) {
+        ws.addRow([]);
+        ws.addRow(["No incluido (apuntes duplicados de cuotas)", data.excludedManualIncome]);
+        ws.addRow(["No incluido (apuntes duplicados de profesores)", data.excludedManualExpense]);
+      }
       const buf = Buffer.from(await wb.xlsx.writeBuffer());
       return sendXlsx(reply, `balance-${yearMonth}.xlsx`, buf);
     }
 
     if (q.format === "pdf") {
-      const pdf = await pdfReport(
-        `Balance mensual ${yearMonth}`,
-        [
-          ["Ingresos", data.income],
-          ["Gastos", data.expense],
-          ["Cobros cuotas", data.feeCollections],
-          ["Balance", data.balance],
-        ],
-        yearMonth,
-      );
+      const pdf = await pdfReport(`Balance mensual ${yearMonth}`, rows, yearMonth, EXCLUDED_NOTE);
       const inline = q.inline === "1" || q.inline === "true";
       return sendPdf(reply, `balance-${yearMonth}.pdf`, pdf, inline);
     }
@@ -132,28 +135,23 @@ export async function reportRoutes(app: FastifyInstance) {
   app.get("/balance-annual", async (request: FastifyRequest, reply: FastifyReply) => {
     const q = request.query as { year?: string; format?: string; inline?: string };
     const year = Number(q.year) || new Date().getFullYear();
-    const rows = [];
-    for (let m = 1; m <= 12; m++) {
-      const ym = `${year}-${String(m).padStart(2, "0")}`;
-      rows.push({ month: ym, ...(await monthlyBalance(ym)) });
-    }
-    const totals = rows.reduce(
-      (a, r) => ({
-        income: a.income + r.income,
-        expense: a.expense + r.expense,
-        balance: a.balance + r.balance,
-      }),
-      { income: 0, expense: 0, balance: 0 },
-    );
+    const byMonth = await balanceByMonth(monthsOfYear(year));
+    const rows = [...byMonth].map(([month, b]) => ({ month, ...balanceInEuros(b) }));
+    const totals = balanceInEuros(sumBalances([...byMonth.values()]));
 
     if (q.format === "xlsx") {
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet(`Balance ${year}`);
-      ws.addRow(["Mes", "Ingresos", "Gastos", "Balance"]);
-      for (const r of rows) {
-        ws.addRow([r.month, r.income, r.expense, r.balance]);
-      }
-      ws.addRow(["Total", totals.income, totals.expense, totals.balance]);
+      const columns = (r: typeof totals) => [
+        r.income,
+        r.feeCollections,
+        r.expense,
+        r.teacherPayments,
+        r.balance,
+      ];
+      ws.addRow(["Mes", "Ingresos (apuntes)", "Cobros de cuotas", "Gastos (apuntes)", "Pagos a profesores", "Balance"]);
+      for (const r of rows) ws.addRow([r.month, ...columns(r)]);
+      ws.addRow(["Total", ...columns(totals)]);
       const buf = Buffer.from(await wb.xlsx.writeBuffer());
       return sendXlsx(reply, `balance-${year}.xlsx`, buf);
     }
@@ -163,22 +161,22 @@ export async function reportRoutes(app: FastifyInstance) {
 
   app.get("/income-by-student", async (request: FastifyRequest, reply: FastifyReply) => {
     const q = request.query as { format?: string };
-    const fees = await prisma.studentFee.findMany({
-      include: { student: true },
+    const groups = await prisma.studentFee.groupBy({
+      by: ["studentId"],
+      _sum: { amountPaid: true, totalAmount: true },
     });
-    const map = new Map<string, { name: string; paid: number; pending: number }>();
-    for (const f of fees) {
-      const key = f.studentId;
-      const cur = map.get(key) ?? {
-        name: `${f.student.firstName} ${f.student.lastName}`,
-        paid: 0,
-        pending: 0,
-      };
-      cur.paid += f.amountPaid;
-      cur.pending += f.totalAmount - f.amountPaid;
-      map.set(key, cur);
-    }
-    const rows = [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+    const students = await prisma.student.findMany({
+      where: { id: { in: groups.map((g) => g.studentId) } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    const rows = summarizeByPerson(
+      groups.map((g) => ({
+        id: g.studentId,
+        paid: g._sum.amountPaid ?? 0,
+        total: g._sum.totalAmount ?? 0,
+      })),
+      new Map(students.map((st) => [st.id, `${st.firstName} ${st.lastName}`])),
+    );
 
     if (q.format === "xlsx") {
       const wb = new ExcelJS.Workbook();
@@ -193,20 +191,22 @@ export async function reportRoutes(app: FastifyInstance) {
 
   app.get("/cost-by-teacher", async (request: FastifyRequest, reply: FastifyReply) => {
     const q = request.query as { format?: string };
-    const payouts = await prisma.teacherPayout.findMany({ include: { teacher: true } });
-    const map = new Map<string, { name: string; paid: number; pending: number }>();
-    for (const p of payouts) {
-      const key = p.teacherId;
-      const cur = map.get(key) ?? {
-        name: `${p.teacher.firstName} ${p.teacher.lastName}`,
-        paid: 0,
-        pending: 0,
-      };
-      cur.paid += p.amountPaid;
-      cur.pending += p.amount - p.amountPaid;
-      map.set(key, cur);
-    }
-    const rows = [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+    const groups = await prisma.teacherPayout.groupBy({
+      by: ["teacherId"],
+      _sum: { amountPaid: true, amount: true },
+    });
+    const teachers = await prisma.teacher.findMany({
+      where: { id: { in: groups.map((g) => g.teacherId) } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    const rows = summarizeByPerson(
+      groups.map((g) => ({
+        id: g.teacherId,
+        paid: g._sum.amountPaid ?? 0,
+        total: g._sum.amount ?? 0,
+      })),
+      new Map(teachers.map((t) => [t.id, `${t.firstName} ${t.lastName}`])),
+    );
 
     if (q.format === "xlsx") {
       const wb = new ExcelJS.Workbook();
@@ -229,7 +229,7 @@ export async function reportRoutes(app: FastifyInstance) {
     const rows = fees.map((f) => ({
       student: `${f.student.firstName} ${f.student.lastName}`,
       month: f.yearMonth,
-      pending: f.totalAmount - f.amountPaid,
+      pending: fromCents(f.totalAmount - f.amountPaid),
       status: f.status,
     }));
 
@@ -263,17 +263,12 @@ export async function reportRoutes(app: FastifyInstance) {
 
   app.get("/evolution", async (request: FastifyRequest, reply: FastifyReply) => {
     const q = request.query as { format?: string; inline?: string };
-    const now = new Date();
-    const rows = [];
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      rows.push({ month: ym, ...(await monthlyBalance(ym)) });
-    }
+    const byMonth = await balanceByMonth(lastTwelveMonths());
+    const rows = [...byMonth].map(([month, b]) => ({ month, ...balanceInEuros(b) }));
     if (q.format === "pdf") {
       const pdf = await pdfReport(
         "Evolución ingresos y gastos (12 meses)",
-        rows.map((r) => [r.month, r.income - r.expense]),
+        rows.map((r) => [r.month, r.balance]),
       );
       const inline = q.inline === "1" || q.inline === "true";
       return sendPdf(reply, "evolucion.pdf", pdf, inline);

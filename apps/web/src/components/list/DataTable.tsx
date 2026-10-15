@@ -52,10 +52,24 @@ export function DataTableRow({
     <tr
       className={cn(
         "border-b border-border/60 transition-colors hover:bg-muted/40",
-        onClick && "cursor-pointer",
+        onClick &&
+          "cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary",
         className,
       )}
       onClick={onClick}
+      // Filas que abren un detalle: también con teclado (Tab + Intro/Espacio).
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.target !== e.currentTarget) return;
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
     >
       {children}
     </tr>
