@@ -6,6 +6,23 @@ import {
   USER_ROLES,
 } from "./enums.js";
 
+/** Importe en euros con, como mucho, dos decimales. */
+const money = () =>
+  z
+    .number()
+    .finite()
+    .refine((n) => Math.abs(Math.round(n * 100) - n * 100) < 1e-6, {
+      message: "El importe admite como máximo dos decimales",
+    });
+
+export const positiveAmountSchema = money().refine((n) => n > 0, {
+  message: "El importe debe ser positivo",
+});
+
+export const nonNegativeAmountSchema = money().refine((n) => n >= 0, {
+  message: "El importe no puede ser negativo",
+});
+
 export const loginSchema = z.object({
   username: z.string().min(1, "Usuario requerido"),
   password: z.string().min(1, "Contraseña requerida"),
@@ -135,7 +152,7 @@ export const expenseEntrySchema = z.object({
 
 export const studentPaymentSchema = z.object({
   feeId: z.string().min(1),
-  amount: z.number().positive(),
+  amount: positiveAmountSchema,
   method: z.enum(PAYMENT_METHODS),
   paidAt: z.string().optional(),
   notes: z.string().optional().nullable(),
@@ -143,7 +160,7 @@ export const studentPaymentSchema = z.object({
 
 export const teacherPayoutPaymentSchema = z.object({
   payoutId: z.string().min(1),
-  amount: z.number().positive(),
+  amount: positiveAmountSchema,
   paidAt: z.string().optional(),
   notes: z.string().optional().nullable(),
 });

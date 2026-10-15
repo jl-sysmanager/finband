@@ -3,8 +3,9 @@ import { FileText, Trash2 } from "lucide-react";
 import { feeStatusBadge } from "@/components/ui/badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { api, downloadUrl } from "@/lib/api";
-import { formatDate, formatMoney } from "@/lib/utils";
+import { ApiError, api, downloadUrl } from "@/lib/api";
+import { formatDate, formatMoney, roundMoney } from "@/lib/utils";
+import { toast } from "@/stores/toast";
 import { useAuth } from "@/stores/auth";
 import { useConfirm } from "@/hooks/useConfirm";
 
@@ -37,7 +38,7 @@ export function TeacherPayoutDetailPanel({ payout, onClose, onDeleted }: Props) 
   const qc = useQueryClient();
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
   const { confirm, dialog: confirmDialog } = useConfirm();
-  const pending = payout.amount - payout.amountPaid;
+  const pending = roundMoney(payout.amount - payout.amountPaid);
 
   const payPayout = useMutation({
     mutationFn: () =>
@@ -46,6 +47,8 @@ export function TeacherPayoutDetailPanel({ payout, onClose, onDeleted }: Props) 
         body: JSON.stringify({ payoutId: payout.id, amount: pending }),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["teacher-payouts"] }),
+    onError: (err) =>
+      toast(err instanceof ApiError ? err.message : "No se pudo registrar el pago", "error"),
   });
 
   const resetPayoutPayment = useMutation({

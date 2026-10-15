@@ -18,6 +18,7 @@ import {
 } from "@/components/list/DataTable";
 import { ApiError, api, downloadUrl } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/utils";
+import { toast } from "@/stores/toast";
 import { useAuth } from "@/stores/auth";
 import { useConfirm } from "@/hooks/useConfirm";
 export type StudentFeeRow = {
@@ -71,6 +72,8 @@ export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
         if (ok) window.open(downloadUrl(`/reports/receipts/student-payment/${data.id}`), "_blank");
       }
     },
+    onError: (err) =>
+      toast(err instanceof ApiError ? err.message : "No se pudo registrar el cobro", "error"),
   });
 
   const deletePayment = useMutation({
@@ -166,7 +169,7 @@ export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
               size="sm"
               className="w-full"
               disabled={!payAmount || payFee.isPending}
-              onClick={() => void payFee.mutateAsync()}
+              onClick={() => payFee.mutate()}
             >
               Cobrar
             </Button>

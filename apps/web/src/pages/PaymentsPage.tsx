@@ -38,7 +38,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ApiError, api, downloadUrl } from "@/lib/api";
-import { buildQuery, currentYearMonth, formatDate, formatMoney } from "@/lib/utils";
+import { buildQuery, currentYearMonth, formatDate, formatMoney, roundMoney } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 
 type StudentPayment = {
@@ -111,6 +111,7 @@ export function PaymentsPage() {
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState("EFECTIVO");
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [payError, setPayError] = useState<string | null>(null);
   const [payOpen, setPayOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [selectedFeeId, setSelectedFeeId] = useState<string | null>(null);
@@ -157,7 +158,7 @@ export function PaymentsPage() {
   );
 
   const pendingSelected = selectedFee
-    ? Math.max(0, selectedFee.totalAmount - selectedFee.amountPaid)
+    ? Math.max(0, roundMoney(selectedFee.totalAmount - selectedFee.amountPaid))
     : 0;
 
   const payFee = useMutation({
@@ -219,6 +220,7 @@ export function PaymentsPage() {
   );
 
   async function submitPayFee() {
+    setPayError(null);
     try {
       const data = await payFee.mutateAsync();
       setPayOpen(false);
@@ -232,8 +234,8 @@ export function PaymentsPage() {
           window.open(downloadUrl(`/reports/receipts/student-payment/${data.id}`), "_blank");
         }
       }
-    } catch {
-      /* mutation error surfaces via payFee.isError if needed */
+    } catch (err) {
+      setPayError(err instanceof ApiError ? err.message : "No se pudo registrar el cobro");
     }
   }
 
@@ -262,7 +264,13 @@ export function PaymentsPage() {
           <div className="flex flex-wrap gap-2">
             {section === "students" ? (
               <>
-                <Button size="sm" onClick={() => setPayOpen(true)}>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setPayError(null);
+                    setPayOpen(true);
+                  }}
+                >
                   Registrar cobro
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)}>
@@ -421,6 +429,11 @@ export function PaymentsPage() {
                     </div>
                   </div>
                 </div>
+                {payError ? (
+                  <Alert variant="destructive">
+                    <AlertDescription>{payError}</AlertDescription>
+                  </Alert>
+                ) : null}
                 <DialogFooter className="pt-2">
                   <Button variant="outline" size="sm" onClick={() => setPayOpen(false)}>
                     Cancelar

@@ -28,8 +28,8 @@ export function StudentFeeGeneratePanel({
   const [error, setError] = useState<string | null>(null);
 
   const preview = useQuery({
-    queryKey: ["student-fee-preview", studentId],
-    queryFn: () => api<Preview>(`/students/${studentId}/fee-preview`),
+    queryKey: ["student-fee-preview", studentId, yearMonth],
+    queryFn: () => api<Preview>(`/students/${studentId}/fee-preview?yearMonth=${yearMonth}`),
   });
 
   const generate = useMutation({

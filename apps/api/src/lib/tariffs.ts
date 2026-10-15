@@ -1,5 +1,39 @@
 import type { ClassType, Student } from "@prisma/client";
+import { feeStatus } from "./fee-status.js";
+import { withLock } from "./locks.js";
+import { roundMoney, subtractMoney, sumMoney } from "./money.js";
 import { prisma } from "./prisma.js";
+import { monthBounds } from "./schedule-occurrences.js";
+
+export class FeeHasPaymentsError extends Error {
+  constructor() {
+    super("La cuota de ese mes ya tiene cobros; elimínelos antes de regenerarla");
+  }
+}
+
+export function currentYearMonth(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Fecha guardada (medianoche UTC del día elegido) como "YYYY-MM-DD". */
+function isoDay(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+/** Un descuento se aplica si su vigencia se solapa con el mes de la cuota. */
+function discountAppliesToMonth(
+  d: { validFrom: Date | null; validTo: Date | null },
+  yearMonth: string,
+) {
+  const { from, to } = monthBounds(yearMonth);
+  if (d.validFrom && isoDay(d.validFrom) > to) return false;
+  if (d.validTo && isoDay(d.validTo) < from) return false;
+  return true;
+}
+
+export function feeLockKey(studentId: string, yearMonth: string) {
+  return `fee:${studentId}:${yearMonth}`;
+}
 
 type EnrollmentWithClass = {
   classGroup: { type: ClassType };
@@ -43,7 +77,10 @@ export async function resolveTariffAmount(
   return { amount: best.amount, ruleName: best.name };
 }
 
-export async function calculateStudentMonthlyFee(studentId: string): Promise<{
+export async function calculateStudentMonthlyFee(
+  studentId: string,
+  yearMonth: string = currentYearMonth(),
+): Promise<{
   baseAmount: number;
   discountAmount: number;
   totalAmount: number;
@@ -65,41 +102,35 @@ export async function calculateStudentMonthlyFee(studentId: string): Promise<{
   }
 
   const lineItems: Array<{ label: string; amount: number }> = [];
-  let baseAmount = 0;
 
   if (student.monthlyFee != null && student.monthlyFee > 0) {
-    baseAmount = student.monthlyFee;
-    lineItems.push({ label: "Cuota fija", amount: student.monthlyFee });
+    lineItems.push({ label: "Cuota fija", amount: roundMoney(student.monthlyFee) });
   } else {
     for (const enr of student.enrollments) {
       const { amount, ruleName } = await resolveTariffAmount(student, enr);
       if (amount > 0) {
-        baseAmount += amount;
         lineItems.push({
           label: `${enr.classGroup.name}${ruleName ? ` (${ruleName})` : ""}`,
-          amount,
+          amount: roundMoney(amount),
         });
       }
     }
   }
+  const baseAmount = sumMoney(lineItems.map((l) => l.amount));
 
-  const now = new Date();
-  let discountAmount = 0;
-  for (const d of student.discounts) {
-    if (d.validFrom && d.validFrom > now) continue;
-    if (d.validTo && d.validTo < now) continue;
-    if (d.type === "PERCENT") {
-      discountAmount += (baseAmount * d.value) / 100;
-    } else {
-      discountAmount += d.value;
-    }
-  }
-  discountAmount = Math.min(discountAmount, baseAmount);
-  const totalAmount = Math.max(0, baseAmount - discountAmount);
+  const discounts = student.discounts
+    .filter((d) => discountAppliesToMonth(d, yearMonth))
+    .map((d) => (d.type === "PERCENT" ? roundMoney((baseAmount * d.value) / 100) : roundMoney(d.value)));
+  const discountAmount = Math.min(sumMoney(discounts), baseAmount);
+  const totalAmount = subtractMoney(baseAmount, discountAmount);
 
   return { baseAmount, discountAmount, totalAmount, lineItems };
 }
 
+/**
+ * Crea o recalcula la cuota del mes. Nunca toca una cuota con cobros: su importe
+ * ya se ha liquidado (total o parcialmente) y cambiarlo descuadraría los recibos.
+ */
 async function upsertStudentFeeForMonth(
   studentId: string,
   yearMonth: string,
@@ -107,26 +138,31 @@ async function upsertStudentFeeForMonth(
 ) {
   const [y, m] = yearMonth.split("-").map(Number);
   const dueDate = new Date(y!, m!, 5);
-  await prisma.studentFee.upsert({
-    where: {
-      studentId_yearMonth: { studentId, yearMonth },
-    },
-    create: {
-      studentId,
-      yearMonth,
-      baseAmount: calc.baseAmount,
-      discountAmount: calc.discountAmount,
-      totalAmount: calc.totalAmount,
-      lineItems: JSON.stringify(calc.lineItems),
-      dueDate,
-      status: "PENDING",
-    },
-    update: {
-      baseAmount: calc.baseAmount,
-      discountAmount: calc.discountAmount,
-      totalAmount: calc.totalAmount,
-      lineItems: JSON.stringify(calc.lineItems),
-    },
+  const fields = {
+    baseAmount: calc.baseAmount,
+    discountAmount: calc.discountAmount,
+    totalAmount: calc.totalAmount,
+    lineItems: JSON.stringify(calc.lineItems),
+  };
+
+  await withLock(feeLockKey(studentId, yearMonth), async () => {
+    const existing = await prisma.studentFee.findUnique({
+      where: { studentId_yearMonth: { studentId, yearMonth } },
+      include: { _count: { select: { payments: true } } },
+    });
+    if (!existing) {
+      await prisma.studentFee.create({
+        data: { studentId, yearMonth, ...fields, dueDate, status: "PENDING" },
+      });
+      return;
+    }
+    if (existing._count.payments > 0 || existing.amountPaid > 0) {
+      throw new FeeHasPaymentsError();
+    }
+    await prisma.studentFee.update({
+      where: { id: existing.id },
+      data: { ...fields, status: feeStatus(calc.totalAmount, existing.amountPaid) },
+    });
   });
 }
 
@@ -139,7 +175,7 @@ export async function generateFeeForStudent(
   });
   if (!student) throw new Error("Alumno no encontrado");
 
-  const calc = await calculateStudentMonthlyFee(studentId);
+  const calc = await calculateStudentMonthlyFee(studentId, yearMonth);
   if (calc.totalAmount <= 0) {
     return { totalAmount: 0, yearMonth };
   }
@@ -153,7 +189,7 @@ export type FeeGenerateIssue =
   | "has_payments"
   | "excluded";
 
-export async function previewFeesForMonth(yearMonth: string) {
+async function computeFeePreview(yearMonth: string) {
   const students = await prisma.student.findMany({
     where: { deletedAt: null, status: "ACTIVE" },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
@@ -173,8 +209,10 @@ export async function previewFeesForMonth(yearMonth: string) {
     amountPaid: number;
   }> = [];
 
+  const calcs = new Map<string, Awaited<ReturnType<typeof calculateStudentMonthlyFee>>>();
   for (const student of students) {
-    const calc = await calculateStudentMonthlyFee(student.id);
+    const calc = await calculateStudentMonthlyFee(student.id, yearMonth);
+    calcs.set(student.id, calc);
     const existing = feeByStudent.get(student.id);
     let issue: FeeGenerateIssue = "ready";
     if (calc.totalAmount <= 0) issue = "no_amount";
@@ -201,9 +239,15 @@ export async function previewFeesForMonth(yearMonth: string) {
       eligible: eligible.length,
       skippedNoAmount: rows.filter((r) => r.issue === "no_amount").length,
       skippedHasPayments: rows.filter((r) => r.issue === "has_payments").length,
-      totalEligibleAmount: eligible.reduce((s, r) => s + r.totalAmount, 0),
+      totalEligibleAmount: sumMoney(eligible.map((r) => r.totalAmount)),
     },
+    calcs,
   };
+}
+
+export async function previewFeesForMonth(yearMonth: string) {
+  const { calcs: _calcs, ...preview } = await computeFeePreview(yearMonth);
+  return preview;
 }
 
 export async function generateFeesForMonth(
@@ -211,7 +255,7 @@ export async function generateFeesForMonth(
   options?: { excludeStudentIds?: string[] },
 ): Promise<{ generated: number; skipped: number }> {
   const exclude = new Set(options?.excludeStudentIds ?? []);
-  const preview = await previewFeesForMonth(yearMonth);
+  const preview = await computeFeePreview(yearMonth);
 
   let generated = 0;
   let skipped = 0;
@@ -224,9 +268,14 @@ export async function generateFeesForMonth(
       skipped++;
       continue;
     }
-    const calc = await calculateStudentMonthlyFee(row.studentId);
-    await upsertStudentFeeForMonth(row.studentId, yearMonth, calc);
-    generated++;
+    try {
+      await upsertStudentFeeForMonth(row.studentId, yearMonth, preview.calcs.get(row.studentId)!);
+      generated++;
+    } catch (e) {
+      // Se cobró algo entre la vista previa y la generación: se respeta la cuota.
+      if (!(e instanceof FeeHasPaymentsError)) throw e;
+      skipped++;
+    }
   }
   return { generated, skipped };
 }

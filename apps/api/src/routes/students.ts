@@ -1,6 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { generateMonthSchema, studentDiscountSchema, studentSchema } from "@finband/shared";
-import { calculateStudentMonthlyFee, generateFeeForStudent } from "../lib/tariffs.js";
+import {
+  calculateStudentMonthlyFee,
+  FeeHasPaymentsError,
+  generateFeeForStudent,
+} from "../lib/tariffs.js";
 import { recordAudit } from "../lib/audit.js";
 import { prisma } from "../lib/prisma.js";
 
@@ -128,8 +132,12 @@ export async function studentRoutes(app: FastifyInstance) {
 
   app.get("/:id/fee-preview", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const { yearMonth } = request.query as { yearMonth?: string };
+    if (yearMonth !== undefined && !/^\d{4}-\d{2}$/.test(yearMonth)) {
+      return reply.status(400).send({ error: "yearMonth inválido (YYYY-MM)" });
+    }
     try {
-      return await calculateStudentMonthlyFee(id);
+      return await calculateStudentMonthlyFee(id, yearMonth);
     } catch {
       return reply.status(404).send({ error: "Alumno no encontrado" });
     }
@@ -143,7 +151,10 @@ export async function studentRoutes(app: FastifyInstance) {
     }
     try {
       return await generateFeeForStudent(id, parsed.data.yearMonth);
-    } catch {
+    } catch (e) {
+      if (e instanceof FeeHasPaymentsError) {
+        return reply.status(409).send({ error: e.message });
+      }
       return reply.status(404).send({ error: "Alumno no encontrado" });
     }
   });

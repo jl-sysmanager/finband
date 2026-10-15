@@ -193,11 +193,13 @@ export async function classRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
     const { scheduleSlots, ...data } = parsed.data;
-    const group = await prisma.classGroup.create({ data });
-    await replaceScheduleSlots(group.id, scheduleSlots);
-    return prisma.classGroup.findUnique({
-      where: { id: group.id },
-      include: classIncludeSchedule,
+    return prisma.$transaction(async (tx) => {
+      const group = await tx.classGroup.create({ data });
+      await replaceScheduleSlots(tx, group.id, scheduleSlots);
+      return tx.classGroup.findUnique({
+        where: { id: group.id },
+        include: classIncludeSchedule,
+      });
     });
   });
 
@@ -208,11 +210,15 @@ export async function classRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
     const { scheduleSlots, ...data } = parsed.data;
-    await prisma.classGroup.update({ where: { id }, data: stripSlots(data) });
-    await replaceScheduleSlots(id, scheduleSlots as ScheduleSlotInput[] | undefined);
-    return prisma.classGroup.findUnique({
-      where: { id },
-      include: classIncludeSchedule,
+    const exists = await prisma.classGroup.findUnique({ where: { id }, select: { id: true } });
+    if (!exists) return reply.status(404).send({ error: "Clase no encontrada" });
+    return prisma.$transaction(async (tx) => {
+      await tx.classGroup.update({ where: { id }, data: stripSlots(data) });
+      await replaceScheduleSlots(tx, id, scheduleSlots as ScheduleSlotInput[] | undefined);
+      return tx.classGroup.findUnique({
+        where: { id },
+        include: classIncludeSchedule,
+      });
     });
   });
 
@@ -293,28 +299,19 @@ export async function classRoutes(app: FastifyInstance) {
     if (!body.records?.length) {
       return reply.status(400).send({ error: "records requerido" });
     }
-    for (const rec of body.records) {
-      const parsed = attendanceRecordSchema.safeParse(rec);
-      if (!parsed.success) continue;
-      await prisma.attendanceRecord.upsert({
-        where: {
-          sessionId_studentId: {
-            sessionId,
-            studentId: parsed.data.studentId,
-          },
-        },
-        create: {
-          sessionId,
-          studentId: parsed.data.studentId,
-          present: parsed.data.present,
-          notes: parsed.data.notes,
-        },
-        update: {
-          present: parsed.data.present,
-          notes: parsed.data.notes,
-        },
-      });
-    }
+    const records = body.records
+      .map((rec) => attendanceRecordSchema.safeParse(rec))
+      .filter((p) => p.success)
+      .map((p) => p.data);
+    await prisma.$transaction(
+      records.map((rec) =>
+        prisma.attendanceRecord.upsert({
+          where: { sessionId_studentId: { sessionId, studentId: rec.studentId } },
+          create: { sessionId, studentId: rec.studentId, present: rec.present, notes: rec.notes },
+          update: { present: rec.present, notes: rec.notes },
+        }),
+      ),
+    );
     return prisma.attendanceSession.findUnique({
       where: { id: sessionId },
       include: { records: true },

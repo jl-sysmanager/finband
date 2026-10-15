@@ -3,6 +3,7 @@ import {
   monthBounds,
   scheduleTotalsInRange,
 } from "./schedule-occurrences.js";
+import { roundMoney, sumMoney } from "./money.js";
 import { prisma } from "./prisma.js";
 
 export type PayoutBasis =
@@ -79,7 +80,7 @@ export function computeBaseFromTeacherConfig(
 ): { baseAmount: number; basis: PayoutBasis } {
   const salary = teacher.monthlySalary ?? 0;
   if (salary > 0) {
-    return { baseAmount: salary, basis: "monthlySalary" };
+    return { baseAmount: roundMoney(salary), basis: "monthlySalary" };
   }
 
   const perClass = teacher.costPerClass ?? 0;
@@ -88,20 +89,20 @@ export function computeBaseFromTeacherConfig(
       schedule.sessionCount > 0
         ? schedule.sessionCount * perClass
         : schedule.classCount * perClass * 4;
-    return { baseAmount, basis: "costPerClass" };
+    return { baseAmount: roundMoney(baseAmount), basis: "costPerClass" };
   }
 
   if (teacher.hourlyRate > 0) {
     if (schedule.totalHours > 0) {
       return {
-        baseAmount: schedule.totalHours * teacher.hourlyRate,
+        baseAmount: roundMoney(schedule.totalHours * teacher.hourlyRate),
         basis: "hourlyRate",
       };
     }
     const weekly = teacher.weeklyHours ?? 0;
     if (weekly > 0) {
       return {
-        baseAmount: teacher.hourlyRate * weekly * weeksInMonth(yearMonth),
+        baseAmount: roundMoney(teacher.hourlyRate * weekly * weeksInMonth(yearMonth)),
         basis: "hourlyWeeklyEstimate",
       };
     }
@@ -129,8 +130,8 @@ export async function calculateTeacherPayout(
   const schedule = await scheduleTotalsForMonth(teacher.classGroups, yearMonth, teacherId);
   const { baseAmount, basis } = computeBaseFromTeacherConfig(teacher, schedule, yearMonth);
 
-  const transportAmount = (teacher.transportCostPerDay ?? 0) * schedule.workDays;
-  const amount = baseAmount + transportAmount;
+  const transportAmount = roundMoney((teacher.transportCostPerDay ?? 0) * schedule.workDays);
+  const amount = sumMoney([baseAmount, transportAmount]);
 
   return {
     baseAmount,
