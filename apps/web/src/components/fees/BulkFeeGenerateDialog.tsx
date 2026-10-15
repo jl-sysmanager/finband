@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { MonthSelect } from "@/components/form/MonthSelect";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/form/Field";
 import {
   Dialog,
   DialogContent,
@@ -9,7 +10,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { ApiError, api } from "@/lib/api";
 import { invalidateFinanceQueries } from "@/lib/query-invalidation";
 import { toast } from "@/stores/toast";
@@ -104,10 +104,9 @@ export function BulkFeeGenerateDialog({ open, onOpenChange, defaultMonth }: Prop
           <DialogTitle>Generación masiva de cuotas</DialogTitle>
         </DialogHeader>
         <div className="flex flex-wrap items-end gap-3">
-          <div className="space-y-1">
-            <Label>Mes</Label>
+          <Field label="Mes">
             <MonthSelect value={yearMonth} onChange={setYearMonth} />
-          </div>
+          </Field>
           {preview.data?.summary ? (
             <p className="text-sm text-muted-foreground">
               {preview.data.summary.eligible} alumnos ·{" "}

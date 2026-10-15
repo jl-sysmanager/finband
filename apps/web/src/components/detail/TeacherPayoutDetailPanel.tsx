@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { FileText, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
-import { feeStatusBadge } from "@/components/ui/badge";
+import { useState } from "react";
+import { feeStatusBadge } from "@/lib/status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,9 +52,11 @@ export function TeacherPayoutDetailPanel({ payout, onClose, onDeleted }: Props) 
   const { confirm, dialog: confirmDialog } = useConfirm();
   const pending = roundMoney(payout.amount - payout.amountPaid);
   const [payAmount, setPayAmount] = useState(pending > 0 ? String(pending) : "");
-  useEffect(() => {
+  const [proposedFor, setProposedFor] = useState(pending);
+  if (proposedFor !== pending) {
+    setProposedFor(pending);
     setPayAmount(pending > 0 ? String(pending) : "");
-  }, [pending]);
+  }
   const payments = payout.payments ?? [];
 
   const payPayout = useMutation({

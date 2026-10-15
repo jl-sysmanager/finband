@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { GraduationCap, Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { StudentQuickPanel } from "@/components/detail/StudentQuickPanel";
 import { EntityDetailSheet } from "@/components/layout/EntityDetailSheet";
@@ -44,9 +44,12 @@ export function StudentsPage() {
 
   const debouncedSearch = useDebouncedValue(search.trim());
 
-  useEffect(() => {
+  // Nueva búsqueda → primera página.
+  const [pageFor, setPageFor] = useState(debouncedSearch);
+  if (pageFor !== debouncedSearch) {
+    setPageFor(debouncedSearch);
     setPage(1);
-  }, [debouncedSearch]);
+  }
 
   const q = useQuery({
     queryKey: ["students", debouncedSearch, page],

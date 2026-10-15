@@ -1,26 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { DetailPageLayout } from "@/components/layout/DetailPageLayout";
+import { StudentForm, type StudentData } from "@/components/students/StudentForm";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useConfirm } from "@/hooks/useConfirm";
 import { ApiError, api } from "@/lib/api";
-import { formatMoney } from "@/lib/utils";
+import { invalidateFinanceQueries } from "@/lib/query-invalidation";
 import { useAuth } from "@/stores/auth";
 import { useSyncPageTitle } from "@/stores/page-title";
-import { FEE_STATUS_LABELS } from "@finband/shared";
-import { StudentFeeGeneratePanel } from "@/components/fees/StudentFeeGeneratePanel";
-import { FeeReminderDialog } from "@/components/fees/FeeReminderDialog";
-import { StudentEconomicHistory } from "@/components/students/StudentEconomicHistory";
-import { useState } from "react";
-import { useConfirm } from "@/hooks/useConfirm";
-import { TeacherSelect } from "@/components/form/TeacherSelect";
-import { invalidateFinanceQueries } from "@/lib/query-invalidation";
+import { toast } from "@/stores/toast";
 
 export function StudentDetailPage() {
   const { id } = useParams();
@@ -28,15 +20,11 @@ export function StudentDetailPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
-  const [tab, setTab] = useState("personal");
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const { confirm, dialog: confirmDialog } = useConfirm();
-  const [reminderFeeId, setReminderFeeId] = useState<string | null>(null);
 
   const student = useQuery({
     queryKey: ["student", id],
-    queryFn: () => api<Record<string, unknown>>(`/students/${id}`),
+    queryFn: () => api<StudentData>(`/students/${id}`),
     enabled: !isNew && !!id,
   });
 
@@ -45,100 +33,26 @@ export function StudentDetailPage() {
       isNew
         ? api<{ id: string }>("/students", { method: "POST", body: JSON.stringify(body) })
         : api<{ id: string }>(`/students/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
-    onSuccess: (data: { id?: string }) => {
-      qc.invalidateQueries({ queryKey: ["students"] });
+    onSuccess: (data) => {
+      void invalidateFinanceQueries(qc);
       if (isNew && data?.id) navigate(`/alumnos/${data.id}`);
-      else qc.invalidateQueries({ queryKey: ["student", id] });
+      else toast("Alumno guardado", "success");
     },
   });
 
   const remove = useMutation({
     mutationFn: () => api(`/students/${id}`, { method: "DELETE" }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["students"] });
+      void invalidateFinanceQueries(qc);
       navigate("/alumnos");
     },
+    onError: (err) =>
+      toast(err instanceof ApiError ? err.message : "No se pudo dar de baja al alumno", "error"),
   });
 
-  const deleteFee = useMutation({
-    mutationFn: (feeId: string) => api(`/payments/student-fees/${feeId}`, { method: "DELETE" }),
-    onSuccess: () => {
-      invalidateFinanceQueries(qc);
-      setDeleteError(null);
-    },
-  });
-
-  async function deleteStudentFee(feeId: string) {
-    const ok = await confirm({
-      title: "Eliminar cuota",
-      description: "¿Eliminar esta cuota? Se borrarán también los cobros asociados.",
-      confirmLabel: "Eliminar",
-      destructive: true,
-    });
-    if (!ok) return;
-    setDeleteError(null);
-    try {
-      await deleteFee.mutateAsync(feeId);
-    } catch (err) {
-      setDeleteError(err instanceof ApiError ? err.message : "No se pudo eliminar la cuota");
-    }
-  }
-
-  const s = student.data as {
-    firstName?: string;
-    lastName?: string;
-    birthDate?: string;
-    phone?: string;
-    email?: string;
-    address?: string;
-    legalGuardian?: string;
-    notes?: string;
-    mainInstrument?: string;
-    level?: string;
-    primaryTeacherId?: string;
-    monthlyFee?: number;
-    status?: string;
-    enrollments?: Array<{ classGroup: { name: string; teacher: { firstName: string; lastName: string } } }>;
-    fees?: Array<{ id: string; yearMonth: string; totalAmount: number; amountPaid: number; status: keyof typeof FEE_STATUS_LABELS }>;
-    discounts?: Array<{ id: string; name: string; type: string; value: number }>;
-  };
-
-  const displayName = isNew ? null : `${s?.firstName ?? ""} ${s?.lastName ?? ""}`.trim();
-  useSyncPageTitle(displayName || null);
-
-  function fieldDefault(name: string) {
-    const raw = s?.[name as keyof typeof s];
-    if (name === "birthDate" && typeof raw === "string") return raw.slice(0, 10);
-    return (raw as string | number | undefined) ?? "";
-  }
-
-  function field(name: string, label: string, type = "text") {
-    return (
-      <div className="space-y-1">
-        <Label>{label}</Label>
-        <Input name={name} type={type} defaultValue={fieldDefault(name)} disabled={!isAdmin} />
-      </div>
-    );
-  }
-
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!isAdmin) return;
-    setSaveError(null);
-    const fd = new FormData(e.currentTarget);
-    const body: Record<string, unknown> = {};
-    fd.forEach((v, k) => {
-      if (k === "monthlyFee") body[k] = v ? Number(v) : null;
-      else body[k] = v || null;
-    });
-    // La ficha no edita el estado: solo se fija al crear (antes reactivaba a los inactivos).
-    if (isNew) body.status = "ACTIVE";
-    try {
-      await save.mutateAsync(body);
-    } catch (err) {
-      setSaveError(err instanceof ApiError ? err.message : "No se pudo guardar el alumno");
-    }
-  }
+  const s = student.data;
+  const displayName = s ? `${s.firstName} ${s.lastName}`.trim() : null;
+  useSyncPageTitle(isNew ? null : displayName);
 
   if (!isNew && student.isLoading) {
     return (
@@ -149,7 +63,7 @@ export function StudentDetailPage() {
     );
   }
 
-  if (!isNew && student.isError) {
+  if (!isNew && (student.isError || !s)) {
     return (
       <Alert variant="destructive" className="page-container">
         <AlertDescription>No se pudo cargar el alumno.</AlertDescription>
@@ -157,162 +71,61 @@ export function StudentDetailPage() {
     );
   }
 
+  async function deleteStudent() {
+    const ok = await confirm({
+      title: "Dar de baja",
+      description: "¿Dar de baja a este alumno?",
+      confirmLabel: "Dar de baja",
+      destructive: true,
+    });
+    if (ok) remove.mutate();
+  }
+
   return (
     <>
       {confirmDialog}
-      <FeeReminderDialog
-        feeId={reminderFeeId}
-        open={!!reminderFeeId}
-        onOpenChange={(o) => !o && setReminderFeeId(null)}
-      />
-    <DetailPageLayout
-      backTo="/alumnos"
-      title={isNew ? "Nuevo alumno" : displayName || "Alumno"}
-      subtitle={
-        !isNew && s?.status ? (
-          <Badge variant={s.status === "ACTIVE" ? "success" : "secondary"}>
-            {s.status === "ACTIVE" ? "Activo" : "Inactivo"}
-          </Badge>
-        ) : undefined
-      }
-      headerActions={
-        !isNew && isAdmin ? (
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={async () => {
-              const ok = await confirm({
-                title: "Dar de baja",
-                description: "¿Dar de baja a este alumno?",
-                confirmLabel: "Dar de baja",
-                destructive: true,
-              });
-              if (!ok) return;
-              setDeleteError(null);
-              try {
-                await remove.mutateAsync();
-              } catch (err) {
-                setDeleteError(
-                  err instanceof ApiError ? err.message : "No se pudo dar de baja al alumno",
-                );
-              }
-            }}
-          >
-            Baja lógica
-          </Button>
-        ) : undefined
-      }
-      footerActions={
-        isAdmin ? (
-          <Button type="submit" form="student-form" disabled={save.isPending} className="w-full md:w-auto">
-            Guardar
-          </Button>
-        ) : undefined
-      }
-    >
-      <form id="student-form" key={isNew ? "new" : id} onSubmit={onSubmit}>
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList>
-            <TabsTrigger value="personal">Personal</TabsTrigger>
-            <TabsTrigger value="academico">Académico</TabsTrigger>
-            <TabsTrigger value="economico">Económico</TabsTrigger>
-          </TabsList>
-          <TabsContent value="personal" keepMounted>
-            <Card>
-              <CardHeader>
-                <CardTitle>Datos personales</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-2">
-                {field("firstName", "Nombre")}
-                {field("lastName", "Apellidos")}
-                {field("birthDate", "Fecha de nacimiento", "date")}
-                {field("phone", "Teléfono")}
-                {field("email", "Email")}
-                {field("address", "Dirección")}
-                {field("legalGuardian", "Tutor legal")}
-                <div className="md:col-span-2 space-y-1">
-                  <Label>Observaciones</Label>
-                  <Input name="notes" defaultValue={s?.notes ?? ""} disabled={!isAdmin} />
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-          <TabsContent value="academico" keepMounted>
-            <Card>
-              <CardHeader>
-                <CardTitle>Académico</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-2">
-                {field("mainInstrument", "Instrumento principal")}
-                {field("level", "Nivel")}
-                <div className="space-y-1">
-                  <Label>Profesor asignado</Label>
-                  <TeacherSelect
-                    name="primaryTeacherId"
-                    defaultValue={s?.primaryTeacherId}
-                    disabled={!isAdmin}
-                  />
-                </div>
-                {!isNew ? (
-                  <div className="md:col-span-2">
-                    <p className="mb-2 text-sm font-medium">Clases matriculadas</p>
-                    <ul className="space-y-1 text-sm text-muted-foreground">
-                      {(s?.enrollments ?? []).map((e, i) => (
-                        <li key={i}>
-                          {e.classGroup.name} — Prof. {e.classGroup.teacher.firstName}{" "}
-                          {e.classGroup.teacher.lastName}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
-          </TabsContent>
-          <TabsContent value="economico" keepMounted>
-            <Card>
-              <CardHeader>
-                <CardTitle>Económico</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-2">
-                {field("monthlyFee", "Cuota mensual fija (opcional)", "number")}
-                {!isNew && isAdmin && id ? (
-                  <div className="md:col-span-2">
-                    <StudentFeeGeneratePanel studentId={id} />
-                  </div>
-                ) : null}
-                {!isNew ? (
-                  <div className="md:col-span-2">
-                    <StudentEconomicHistory
-                      fees={(s?.fees ?? []) as Parameters<typeof StudentEconomicHistory>[0]["fees"]}
-                      discounts={
-                        (s?.discounts ?? []) as Parameters<
-                          typeof StudentEconomicHistory
-                        >[0]["discounts"]
-                      }
-                      isAdmin={!!isAdmin}
-                      deleteFeePending={deleteFee.isPending}
-                      onDeleteFee={(feeId) => void deleteStudentFee(feeId)}
-                      onReminder={(feeId) => setReminderFeeId(feeId)}
-                    />
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
-        {saveError ? (
-          <Alert variant="destructive" className="mt-4">
-            <AlertDescription>{saveError}</AlertDescription>
-          </Alert>
-        ) : null}
-        {deleteError ? (
-          <Alert variant="destructive" className="mt-4">
-            <AlertDescription>{deleteError}</AlertDescription>
-          </Alert>
-        ) : null}
-      </form>
-    </DetailPageLayout>
+      <DetailPageLayout
+        backTo="/alumnos"
+        title={isNew ? "Nuevo alumno" : displayName || "Alumno"}
+        subtitle={
+          s ? (
+            <Badge variant={s.status === "ACTIVE" ? "success" : "secondary"}>
+              {s.status === "ACTIVE" ? "Activo" : "Inactivo"}
+            </Badge>
+          ) : undefined
+        }
+        headerActions={
+          !isNew && isAdmin ? (
+            <Button variant="destructive" size="sm" onClick={() => void deleteStudent()}>
+              Baja lógica
+            </Button>
+          ) : undefined
+        }
+        footerActions={
+          isAdmin ? (
+            <Button
+              type="submit"
+              form="student-form"
+              disabled={save.isPending}
+              className="w-full md:w-auto"
+            >
+              Guardar
+            </Button>
+          ) : undefined
+        }
+      >
+        <Card>
+          <CardContent className="pt-6">
+            <StudentForm
+              key={isNew ? "new" : id}
+              formId="student-form"
+              student={s}
+              isAdmin={isAdmin}
+              onSubmit={(body) => save.mutateAsync(body)}
+            />
+          </CardContent>
+        </Card>
+      </DetailPageLayout>
     </>
   );
 }

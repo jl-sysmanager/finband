@@ -75,13 +75,20 @@ export async function studentRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
     const d = parsed.data;
-    return prisma.student.create({
+    const saved = await prisma.student.create({
       data: {
         ...d,
         birthDate: d.birthDate ? parseCalendarDate(d.birthDate) : null,
         email: d.email || null,
       },
     });
+    await recordAudit(request, {
+      action: "CREATE",
+      entityType: "student",
+      entityId: saved.id,
+      details: null,
+    });
+    return saved;
   });
 
   app.patch("/:id", async (request, reply) => {
@@ -93,7 +100,7 @@ export async function studentRoutes(app: FastifyInstance) {
     const d = parsed.data;
     const existing = await prisma.student.findFirst({ where: { id, deletedAt: null } });
     if (!existing) return reply.status(404).send({ error: "Alumno no encontrado" });
-    return prisma.student.update({
+    const saved = await prisma.student.update({
       where: { id },
       data: {
         ...d,
@@ -101,6 +108,13 @@ export async function studentRoutes(app: FastifyInstance) {
         email: d.email === undefined ? undefined : d.email || null,
       },
     });
+    await recordAudit(request, {
+      action: "UPDATE",
+      entityType: "student",
+      entityId: saved.id,
+      details: { fields: Object.keys((request.body ?? {}) as object) },
+    });
+    return saved;
   });
 
   app.delete("/:id", async (request, reply) => {
@@ -127,7 +141,7 @@ export async function studentRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
     const d = parsed.data;
-    return prisma.studentDiscount.create({
+    const saved = await prisma.studentDiscount.create({
       data: {
         studentId: id,
         ...d,
@@ -135,11 +149,28 @@ export async function studentRoutes(app: FastifyInstance) {
         validTo: d.validTo ? parseCalendarDate(d.validTo) : null,
       },
     });
+    await recordAudit(request, {
+      action: "CREATE",
+      entityType: "student_discount",
+      entityId: saved.id,
+      details: null,
+    });
+    return saved;
   });
 
-  app.delete("/:id/discounts/:discountId", async (request) => {
-    const { discountId } = request.params as { id: string; discountId: string };
-    await prisma.studentDiscount.delete({ where: { id: discountId } });
+  app.delete("/:id/discounts/:discountId", async (request, reply) => {
+    const { id, discountId } = request.params as { id: string; discountId: string };
+    // Solo se borra si el descuento pertenece al alumno de la URL.
+    const { count } = await prisma.studentDiscount.deleteMany({
+      where: { id: discountId, studentId: id },
+    });
+    if (count === 0) return reply.status(404).send({ error: "Descuento no encontrado" });
+    await recordAudit(request, {
+      action: "DELETE",
+      entityType: "student_discount",
+      entityId: discountId,
+      details: { studentId: id },
+    });
     return { ok: true };
   });
 

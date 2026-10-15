@@ -196,14 +196,21 @@ export async function classRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
     const { scheduleSlots, ...data } = parsed.data;
-    return prisma.$transaction(async (tx) => {
+    const created = await prisma.$transaction(async (tx) => {
       const group = await tx.classGroup.create({ data });
       await replaceScheduleSlots(tx, group.id, scheduleSlots);
-      return tx.classGroup.findUnique({
+      return tx.classGroup.findUniqueOrThrow({
         where: { id: group.id },
         include: classIncludeSchedule,
       });
     });
+    await recordAudit(request, {
+      action: "CREATE",
+      entityType: "class_group",
+      entityId: created.id,
+      details: { name: created.name },
+    });
+    return created;
   });
 
   app.patch("/:id", async (request, reply) => {
@@ -218,14 +225,21 @@ export async function classRoutes(app: FastifyInstance) {
       select: { id: true },
     });
     if (!exists) return reply.status(404).send({ error: "Clase no encontrada" });
-    return prisma.$transaction(async (tx) => {
+    const updated = await prisma.$transaction(async (tx) => {
       await tx.classGroup.update({ where: { id }, data: stripSlots(data) });
       await replaceScheduleSlots(tx, id, scheduleSlots as ScheduleSlotInput[] | undefined);
-      return tx.classGroup.findUnique({
+      return tx.classGroup.findUniqueOrThrow({
         where: { id },
         include: classIncludeSchedule,
       });
     });
+    await recordAudit(request, {
+      action: "UPDATE",
+      entityType: "class_group",
+      entityId: id,
+      details: { fields: Object.keys((request.body ?? {}) as object) },
+    });
+    return updated;
   });
 
   // Borrado lógico: conserva horario, suspensiones y asistencia para que las

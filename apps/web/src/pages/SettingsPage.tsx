@@ -1,34 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/form/Field";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  DataTable,
-  DataTableHead,
-  DataTableRow,
-  DataTableTd,
-  DataTableTh,
-} from "@/components/list/DataTable";
+import { DataTable, DataTableHead, DataTableRow, DataTableTd, DataTableTh } from "@/components/list/DataTable";
 import { WorkspaceShell } from "@/components/layout/PageShell";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ApiError, api, deleteSchoolLogo, downloadUrl, uploadBackup, uploadSchoolLogo } from "@/lib/api";
 import { SchoolLogo } from "@/components/layout/SchoolLogo";
 import { schoolLogoUrl } from "@/lib/school-branding";
 import { FormSelect } from "@/components/form/FormSelect";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import { useAuth } from "@/stores/auth";
 import { useConfirm } from "@/hooks/useConfirm";
 import { Download, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
-import { formatDate } from "@/lib/utils";
+import { AuditLogTable } from "@/components/settings/AuditLogTable";
 
 const ROLE_OPTIONS = [
   { value: "ADMIN", label: "Administrador" },
@@ -221,24 +210,20 @@ export function SettingsPage() {
             <CardTitle>Datos de la escuela</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1">
-              <Label>Nombre</Label>
+            <Field label="Nombre">
               <Input name="name" defaultValue={school.data?.name ?? ""} disabled={!isAdmin} />
-            </div>
-            <div className="space-y-1">
-              <Label>Email</Label>
+            </Field>
+            <Field label="Email">
               <Input name="email" defaultValue={school.data?.email ?? ""} disabled={!isAdmin} />
-            </div>
-            <div className="space-y-1">
-              <Label>Teléfono</Label>
+            </Field>
+            <Field label="Teléfono">
               <Input name="phone" defaultValue={school.data?.phone ?? ""} disabled={!isAdmin} />
-            </div>
-            <div className="space-y-1">
-              <Label>Dirección</Label>
+            </Field>
+            <Field label="Dirección">
               <Input name="address" defaultValue={school.data?.address ?? ""} disabled={!isAdmin} />
-            </div>
+            </Field>
             <div className="space-y-3 md:col-span-2">
-              <Label>Logotipo del centro</Label>
+              <p className="text-sm font-medium">Logotipo del centro</p>
               <p className="text-xs text-muted-foreground">
                 Se guarda en el volumen de datos del servidor (persistente en Railway). Aparece en la
                 web y en los PDF.
@@ -277,11 +262,15 @@ export function SettingsPage() {
               {logoError ? <p className="text-sm text-destructive">{logoError}</p> : null}
             </div>
             <div className="space-y-1 md:col-span-2">
-              <Label>Curso académico activo</Label>
+              <Label htmlFor="school-active-year">Curso académico activo</Label>
+              {/* Deshabilitado (y por tanto no enviado) hasta tener la lista: si se
+                  guardara antes, el curso activo quedaría vacío. */}
               <select
+                id="school-active-year"
+                key={years.data ? "loaded" : "loading"}
                 name="activeYearId"
                 defaultValue={school.data?.activeYearId ?? ""}
-                disabled={!isAdmin}
+                disabled={!isAdmin || !years.data}
                 className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm"
               >
                 <option value="">—</option>
@@ -323,8 +312,9 @@ export function SettingsPage() {
               </Button>
             </div>
             <div className="space-y-2 border-t border-border pt-4">
-              <Label>Restaurar desde archivo .sqlite</Label>
+              <Label htmlFor="backup-restore-file">Restaurar desde archivo .sqlite</Label>
               <Input
+                id="backup-restore-file"
                 type="file"
                 accept=".sqlite,.db,application/octet-stream"
                 onChange={(e) => {
@@ -491,49 +481,5 @@ export function SettingsPage() {
         ) : null}
       </Tabs>
     </WorkspaceShell>
-  );
-}
-
-function AuditLogTable() {
-  const logs = useQuery({
-    queryKey: ["audit-logs"],
-    queryFn: () =>
-      api<
-        Array<{
-          id: string;
-          username: string;
-          action: string;
-          entityType: string;
-          entityId: string | null;
-          details: string | null;
-          createdAt: string;
-        }>
-      >("/admin/audit-logs?limit=40"),
-  });
-
-  if (logs.isLoading) return <p className="text-sm text-muted-foreground">Cargando…</p>;
-
-  return (
-    <DataTable>
-      <DataTableHead>
-        <DataTableTh>Fecha</DataTableTh>
-        <DataTableTh>Usuario</DataTableTh>
-        <DataTableTh>Acción</DataTableTh>
-        <DataTableTh>Entidad</DataTableTh>
-      </DataTableHead>
-      <tbody>
-        {(logs.data ?? []).map((row) => (
-          <DataTableRow key={row.id}>
-            <DataTableTd className="text-xs">{formatDate(row.createdAt)}</DataTableTd>
-            <DataTableTd>{row.username}</DataTableTd>
-            <DataTableTd>{row.action}</DataTableTd>
-            <DataTableTd className="text-xs text-muted-foreground">
-              {row.entityType}
-              {row.entityId ? ` · ${row.entityId.slice(0, 8)}…` : ""}
-            </DataTableTd>
-          </DataTableRow>
-        ))}
-      </tbody>
-    </DataTable>
   );
 }

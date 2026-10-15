@@ -24,7 +24,7 @@ export async function financeRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
     const d = parsed.data;
-    return prisma.incomeEntry.create({
+    const saved = await prisma.incomeEntry.create({
       data: {
         date: parseCalendarDate(d.date),
         concept: d.concept,
@@ -34,6 +34,13 @@ export async function financeRoutes(app: FastifyInstance) {
         notes: d.notes,
       },
     });
+    await recordAudit(request, {
+      action: "CREATE",
+      entityType: "income",
+      entityId: saved.id,
+      details: null,
+    });
+    return saved;
   });
 
   app.patch("/incomes/:id", async (request, reply) => {
@@ -43,13 +50,20 @@ export async function financeRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
     const d = parsed.data;
-    return prisma.incomeEntry.update({
+    const saved = await prisma.incomeEntry.update({
       where: { id },
       data: {
         ...d,
         date: d.date ? parseCalendarDate(d.date) : undefined,
       },
     });
+    await recordAudit(request, {
+      action: "UPDATE",
+      entityType: "income",
+      entityId: saved.id,
+      details: { fields: Object.keys((request.body ?? {}) as object) },
+    });
+    return saved;
   });
 
   app.delete("/incomes/:id", async (request) => {
@@ -78,7 +92,7 @@ export async function financeRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
     const d = parsed.data;
-    return prisma.expenseEntry.create({
+    const saved = await prisma.expenseEntry.create({
       data: {
         date: parseCalendarDate(d.date),
         concept: d.concept,
@@ -87,6 +101,13 @@ export async function financeRoutes(app: FastifyInstance) {
         notes: d.notes,
       },
     });
+    await recordAudit(request, {
+      action: "CREATE",
+      entityType: "expense",
+      entityId: saved.id,
+      details: null,
+    });
+    return saved;
   });
 
   app.patch("/expenses/:id", async (request, reply) => {
@@ -96,13 +117,20 @@ export async function financeRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
     const d = parsed.data;
-    return prisma.expenseEntry.update({
+    const saved = await prisma.expenseEntry.update({
       where: { id },
       data: {
         ...d,
         date: d.date ? parseCalendarDate(d.date) : undefined,
       },
     });
+    await recordAudit(request, {
+      action: "UPDATE",
+      entityType: "expense",
+      entityId: saved.id,
+      details: { fields: Object.keys((request.body ?? {}) as object) },
+    });
+    return saved;
   });
 
   app.delete("/expenses/:id", async (request) => {

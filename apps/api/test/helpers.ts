@@ -80,6 +80,8 @@ export type TestClient = {
     method: "GET" | "POST" | "PATCH" | "DELETE",
     url: string,
     body?: unknown,
+    // Cuerpo JSON libre: cada test comprueba la forma que espera.
+    // oxlint-disable-next-line typescript/no-explicit-any
   ) => Promise<{ status: number; body: any }>;
   close: () => Promise<void>;
 };

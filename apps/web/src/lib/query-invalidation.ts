@@ -27,3 +27,21 @@ export function invalidateFinanceQueries(qc: QueryClient) {
     },
   });
 }
+
+/** Consultas que muestran clases, horarios o matrículas. */
+export function invalidateClassQueries(qc: QueryClient, classId?: string) {
+  void qc.invalidateQueries({ queryKey: ["classes"] });
+  void qc.invalidateQueries({ queryKey: ["weekly-schedule"] });
+  void qc.invalidateQueries({ queryKey: ["schedule-occurrences"] });
+  void qc.invalidateQueries({ queryKey: ["dashboard-action-items"] });
+  if (classId) void qc.invalidateQueries({ queryKey: ["class", classId] });
+}
+
+/** Consultas que muestran profesores (listados, selectores, clases y liquidaciones). */
+export function invalidateTeacherQueries(qc: QueryClient, teacherId?: string) {
+  void qc.invalidateQueries({ queryKey: ["teachers"] });
+  void qc.invalidateQueries({ queryKey: ["classes"] });
+  void qc.invalidateQueries({ queryKey: ["teacher-payouts"] });
+  void qc.invalidateQueries({ queryKey: ["teacher-payout-preview"] });
+  if (teacherId) void qc.invalidateQueries({ queryKey: ["teacher", teacherId] });
+}

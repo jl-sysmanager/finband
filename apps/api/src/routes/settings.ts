@@ -2,6 +2,7 @@ import multipart from "@fastify/multipart";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { academicYearSchema, categorySchema, schoolSettingsSchema } from "@finband/shared";
 import { prisma } from "../lib/prisma.js";
+import { recordAudit } from "../lib/audit.js";
 import {
   logoMimeFromFilename,
   readLogoBuffer,
@@ -98,6 +99,12 @@ export async function settingsRoutes(app: FastifyInstance) {
       where: { id: "default" },
       create: { id: "default", name: data.name ?? "Escuela", ...data },
       update: data,
+    });
+    await recordAudit(request, {
+      action: "UPDATE",
+      entityType: "school_settings",
+      entityId: "default",
+      details: { fields: Object.keys(data) },
     });
     return schoolPayload(await loadSchool());
   });

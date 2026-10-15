@@ -1,18 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
+import { DetailPageLayout } from "@/components/layout/DetailPageLayout";
 import { TeacherPayoutPanel } from "@/components/payouts/TeacherPayoutPanel";
+import {
+  TeacherForm,
+  TeacherPayoutHistory,
+  type TeacherData,
+} from "@/components/teachers/TeacherForm";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { ApiError, api } from "@/lib/api";
-import { formatMoney } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
+import { api } from "@/lib/api";
+import { invalidateTeacherQueries } from "@/lib/query-invalidation";
 import { useAuth } from "@/stores/auth";
 import { useSyncPageTitle } from "@/stores/page-title";
-import { DetailPageLayout } from "@/components/layout/DetailPageLayout";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useState } from "react";
+import { toast } from "@/stores/toast";
 
 export function TeacherDetailPage() {
   const { id } = useParams();
@@ -20,11 +23,10 @@ export function TeacherDetailPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
-  const [saveError, setSaveError] = useState<string | null>(null);
 
   const teacher = useQuery({
     queryKey: ["teacher", id],
-    queryFn: () => api<Record<string, unknown>>(`/teachers/${id}`),
+    queryFn: () => api<TeacherData>(`/teachers/${id}`),
     enabled: !isNew && !!id,
   });
 
@@ -33,60 +35,16 @@ export function TeacherDetailPage() {
       isNew
         ? api<{ id: string }>("/teachers", { method: "POST", body: JSON.stringify(body) })
         : api<{ id: string }>(`/teachers/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
-    onSuccess: (data: { id?: string }) => {
-      qc.invalidateQueries({ queryKey: ["teachers"] });
+    onSuccess: (data) => {
+      invalidateTeacherQueries(qc, isNew ? undefined : id);
       if (isNew && data?.id) navigate(`/profesores/${data.id}`);
-      else qc.invalidateQueries({ queryKey: ["teacher", id] });
+      else toast("Profesor guardado", "success");
     },
   });
 
-  const t = teacher.data as {
-    firstName?: string;
-    lastName?: string;
-    phone?: string;
-    email?: string;
-    specialty?: string;
-    hourlyRate?: number;
-    monthlySalary?: number;
-    costPerClass?: number;
-    weeklyHours?: number;
-    classGroups?: Array<{ name: string }>;
-    transportCostPerDay?: number;
-    payouts?: Array<{
-      yearMonth: string;
-      amount: number;
-      baseAmount: number;
-      transportAmount: number;
-      workDays: number;
-      amountPaid: number;
-      status: string;
-    }>;
-  };
-
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!isAdmin) return;
-    setSaveError(null);
-    const fd = new FormData(e.currentTarget);
-    const body: Record<string, unknown> = {};
-    fd.forEach((v, k) => {
-      if (
-        ["hourlyRate", "monthlySalary", "costPerClass", "weeklyHours", "transportCostPerDay"].includes(
-          k,
-        )
-      ) {
-        body[k] = v ? Number(v) : k === "transportCostPerDay" ? 0 : null;
-      } else body[k] = v || null;
-    });
-    try {
-      await save.mutateAsync(body);
-    } catch (err) {
-      setSaveError(err instanceof ApiError ? err.message : "No se pudo guardar el profesor");
-    }
-  }
-
-  const displayName = isNew ? null : `${t?.firstName ?? ""} ${t?.lastName ?? ""}`.trim();
-  useSyncPageTitle(displayName || null);
+  const t = teacher.data;
+  const displayName = t ? `${t.firstName} ${t.lastName}`.trim() : null;
+  useSyncPageTitle(isNew ? null : displayName);
 
   if (!isNew && teacher.isLoading) {
     return (
@@ -97,7 +55,7 @@ export function TeacherDetailPage() {
     );
   }
 
-  if (!isNew && teacher.isError) {
+  if (!isNew && (teacher.isError || !t)) {
     return (
       <Alert variant="destructive" className="page-container">
         <AlertDescription>No se pudo cargar el profesor.</AlertDescription>
@@ -117,74 +75,40 @@ export function TeacherDetailPage() {
         ) : undefined
       }
     >
-      <form id="teacher-form" key={isNew ? "new" : id} onSubmit={onSubmit} className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Datos personales y económicos</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <TeacherForm
+            key={isNew ? "new" : id}
+            formId="teacher-form"
+            teacher={t}
+            isAdmin={isAdmin}
+            onSubmit={(body) => save.mutateAsync(body)}
+          />
+        </CardContent>
+      </Card>
+      {t && isAdmin ? (
         <Card>
           <CardHeader>
-            <CardTitle>Datos personales y económicos</CardTitle>
+            <CardTitle>Liquidación mensual</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-2">
-            {[
-              ["firstName", "Nombre"],
-              ["lastName", "Apellidos"],
-              ["phone", "Teléfono"],
-              ["email", "Email"],
-              ["specialty", "Especialidad"],
-              ["hourlyRate", "Precio por hora", "number"],
-              ["monthlySalary", "Salario mensual", "number"],
-              ["costPerClass", "Coste por clase", "number"],
-              ["weeklyHours", "Horas semanales", "number"],
-              ["transportCostPerDay", "Transporte por jornada (€)", "number"],
-            ].map(([name, label, type]) => (
-              <div key={name} className="space-y-1">
-                <Label>{label}</Label>
-                <Input
-                  name={name}
-                  type={type ?? "text"}
-                  defaultValue={(t?.[name as keyof typeof t] as string | number | undefined) ?? ""}
-                  disabled={!isAdmin}
-                />
-              </div>
-            ))}
+          <CardContent>
+            <TeacherPayoutPanel teacherId={t.id} />
           </CardContent>
         </Card>
-        {!isNew && isAdmin && id ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Liquidación mensual</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <TeacherPayoutPanel teacherId={id} />
-            </CardContent>
-          </Card>
-        ) : null}
-        {!isNew && t?.payouts ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Liquidaciones registradas</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-1 text-sm">
-                {t.payouts.map((p, i) => (
-                  <li key={i}>
-                    {p.yearMonth}: {formatMoney(p.amountPaid)} / {formatMoney(p.amount)} ({p.status})
-                    {p.transportAmount > 0 ? (
-                      <span className="block text-xs text-muted-foreground">
-                        Base {formatMoney(p.baseAmount)} + transporte {formatMoney(p.transportAmount)}{" "}
-                        ({p.workDays} jornadas)
-                      </span>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        ) : null}
-        {saveError ? (
-          <Alert variant="destructive">
-            <AlertDescription>{saveError}</AlertDescription>
-          </Alert>
-        ) : null}
-      </form>
+      ) : null}
+      {t ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Liquidaciones registradas</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TeacherPayoutHistory payouts={t.payouts ?? []} />
+          </CardContent>
+        </Card>
+      ) : null}
     </DetailPageLayout>
   );
 }

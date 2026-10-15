@@ -22,7 +22,14 @@ export async function tariffRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
-    return prisma.tariffRule.create({ data: parsed.data });
+    const saved = await prisma.tariffRule.create({ data: parsed.data });
+    await recordAudit(request, {
+      action: "CREATE",
+      entityType: "tariff",
+      entityId: saved.id,
+      details: null,
+    });
+    return saved;
   });
 
   app.patch("/:id", async (request, reply) => {
@@ -31,7 +38,14 @@ export async function tariffRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
-    return prisma.tariffRule.update({ where: { id }, data: parsed.data });
+    const saved = await prisma.tariffRule.update({ where: { id }, data: parsed.data });
+    await recordAudit(request, {
+      action: "UPDATE",
+      entityType: "tariff",
+      entityId: saved.id,
+      details: { fields: Object.keys((request.body ?? {}) as object) },
+    });
+    return saved;
   });
 
   app.delete("/:id", async (request, reply) => {

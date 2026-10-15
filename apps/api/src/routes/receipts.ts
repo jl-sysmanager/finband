@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { PAYMENT_METHOD_LABELS, type PaymentMethod } from "@finband/shared";
+import { PAYMENT_METHOD_LABELS } from "@finband/shared";
 import {
   createPdf,
   drawMetaGrid,

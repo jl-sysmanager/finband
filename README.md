@@ -46,6 +46,16 @@ En desarrollo el administrador es `admin`/`admin123` salvo que se defina `ADMIN_
 - Frontend: [http://localhost:5173](http://localhost:5173)
 - API: [http://localhost:3000](http://localhost:3000)
 
+## Calidad
+
+```bash
+npm test           # tests de la API (Vitest, base SQLite temporal por fichero)
+npm run lint       # oxlint (web y API)
+npm run typecheck  # TypeScript de API y web
+```
+
+GitHub Actions ejecuta tipos, lint, tests y build en cada push a `main`/`dev` y en cada PR.
+
 ## Manual de usuario (PDF)
 
 ```bash

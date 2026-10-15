@@ -6,8 +6,8 @@ import { TablePagination } from "@/components/list/TablePagination";
 import { usePagination } from "@/hooks/usePagination";
 import { FormSelect } from "@/components/form/FormSelect";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/form/Field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { EntityDetailSheet } from "@/components/layout/EntityDetailSheet";
 import { SheetFooter } from "@/components/ui/sheet";
 import { FilterField } from "@/components/list/FilterField";
@@ -219,29 +219,25 @@ export function FinancePage({ mode }: FinanceProps) {
             <p className="text-sm text-muted-foreground">Cargando categorías…</p>
           ) : (
             <form id="finance-sheet-form" key={formKey} onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label>Fecha</Label>
+              <Field label="Fecha">
                 <Input
                   name="date"
                   type="date"
                   required
                   defaultValue={editing ? toDateInput(editing.date) : todayISO()}
                 />
-              </div>
-              <div className="space-y-1 md:col-span-2">
-                <Label>Concepto</Label>
+              </Field>
+              <Field label="Concepto" className="md:col-span-2">
                 <Input name="concept" required defaultValue={editing?.concept ?? ""} />
-              </div>
-              <div className="space-y-1">
-                <Label>Categoría</Label>
+              </Field>
+              <Field label="Categoría">
                 <FormSelect
                   value={categoryId}
                   onValueChange={setCategoryId}
                   options={categoryOptions}
                 />
-              </div>
-              <div className="space-y-1">
-                <Label>Importe</Label>
+              </Field>
+              <Field label="Importe">
                 <Input
                   name="amount"
                   type="number"
@@ -249,17 +245,15 @@ export function FinancePage({ mode }: FinanceProps) {
                   required
                   defaultValue={editing?.amount ?? ""}
                 />
-              </div>
+              </Field>
               {isIncome ? (
-                <div className="space-y-1">
-                  <Label>Método de pago</Label>
+                <Field label="Método de pago">
                   <FormSelect value={method} onValueChange={setMethod} options={methodOptions} />
-                </div>
+                </Field>
               ) : null}
-              <div className="space-y-1 md:col-span-2">
-                <Label>Observaciones</Label>
+              <Field label="Observaciones" className="md:col-span-2">
                 <Input name="notes" defaultValue={editing?.notes ?? ""} />
-              </div>
+              </Field>
               {saveError ? (
                 <Alert variant="destructive" className="sm:col-span-2">
                   <AlertDescription>{saveError}</AlertDescription>

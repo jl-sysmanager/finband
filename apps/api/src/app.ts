@@ -15,6 +15,8 @@ import {
 } from "./lib/auth-plugin.js";
 import { config } from "./lib/config.js";
 import { configureSqlite } from "./lib/prisma.js";
+import { errorHandler } from "./lib/errors.js";
+import { guardQueryParams } from "./lib/query-guard.js";
 import { respondInEuros } from "./lib/money-api.js";
 import { authRoutes, publicAuthRoutes } from "./routes/auth.js";
 import { classRoutes } from "./routes/classes.js";
@@ -36,6 +38,7 @@ const webDist = process.env.WEB_DIST ?? path.join(__dirname, "../../web/dist");
 export async function buildApp(options: { logger?: boolean } = {}) {
   const app = Fastify({ logger: options.logger ?? true });
   await configureSqlite();
+  app.setErrorHandler(errorHandler);
 
   await app.register(cors, {
     origin: process.env.CORS_ORIGIN ?? true,
@@ -59,6 +62,7 @@ export async function buildApp(options: { logger?: boolean } = {}) {
 
       await api.register(async (secured) => {
         secured.addHook("preHandler", authenticate);
+        secured.addHook("preHandler", guardQueryParams);
         secured.addHook("preHandler", blockReadonlyWrites);
 
         await secured.register(authRoutes, { prefix: "/auth" });
@@ -93,13 +97,25 @@ export async function buildApp(options: { logger?: boolean } = {}) {
       root: webDist,
       prefix: "/",
       wildcard: false,
+      // Los ficheros de /assets llevan hash en el nombre: se pueden cachear para siempre.
+      // index.html no, para que tras una actualización se carguen los nuevos.
+      setHeaders(reply, filePath) {
+        reply.header(
+          "Cache-Control",
+          filePath.includes(`${path.sep}assets${path.sep}`)
+            ? "public, max-age=31536000, immutable"
+            : "no-cache",
+        );
+      },
     });
 
     app.setNotFoundHandler(async (request, reply) => {
-      if (request.url.startsWith("/api")) {
+      // Un recurso que no existe (p. ej. un trozo de JS de una versión anterior)
+      // debe dar 404: devolver index.html en su lugar deja la página en blanco.
+      if (request.url.startsWith("/api") || request.url.startsWith("/assets/")) {
         return reply.status(404).send({ error: "No encontrado" });
       }
-      return reply.sendFile("index.html", webDist);
+      return reply.header("Cache-Control", "no-cache").sendFile("index.html", webDist);
     });
   }
 

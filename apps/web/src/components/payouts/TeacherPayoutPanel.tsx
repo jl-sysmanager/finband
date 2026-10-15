@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MonthSelect } from "@/components/form/MonthSelect";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
+import { Field } from "@/components/form/Field";
 import { ApiError, api } from "@/lib/api";
 import { invalidateFinanceQueries } from "@/lib/query-invalidation";
 import { buildQuery, currentYearMonth, formatMoney } from "@/lib/utils";
@@ -75,10 +75,9 @@ export function TeacherPayoutPanel({
 
   return (
     <div className="space-y-3 text-sm">
-      <div className="space-y-1">
-        <Label>Mes</Label>
+      <Field label="Mes">
         <MonthSelect className="min-w-[180px]" value={yearMonth} onChange={setYearMonth} />
-      </div>
+      </Field>
       {preview.isLoading ? (
         <p className="text-muted-foreground">Calculando…</p>
       ) : preview.data ? (

@@ -1,14 +1,14 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { FEE_STATUS_LABELS, PAYMENT_METHOD_LABELS, PAYMENT_METHODS } from "@finband/shared";
 import { Bell, FileText, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { FormSelect } from "@/components/form/FormSelect";
 import { FeeReminderDialog } from "@/components/fees/FeeReminderDialog";
-import { feeStatusBadge } from "@/components/ui/badge";
+import { feeStatusBadge } from "@/lib/status";
 import { Badge } from "@/components/ui/badge";
+import { Field } from "@/components/form/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   DataTable,
   DataTableHead,
@@ -51,9 +51,11 @@ export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
   const [payAmount, setPayAmount] = useState(pending > 0 ? String(pending) : "");
   // El panel no se vuelve a montar tras un cobro (perdería el aviso de recibo):
   // se actualiza el importe propuesto cuando cambia lo pendiente.
-  useEffect(() => {
+  const [proposedFor, setProposedFor] = useState(pending);
+  if (proposedFor !== pending) {
+    setProposedFor(pending);
     setPayAmount(pending > 0 ? String(pending) : "");
-  }, [pending]);
+  }
   const [payMethod, setPayMethod] = useState("EFECTIVO");
   const [reminderOpen, setReminderOpen] = useState(false);
 
@@ -156,8 +158,7 @@ export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
           <div className="space-y-3 rounded-lg border border-border p-3">
             <p className="text-xs font-medium text-muted-foreground">Registrar cobro</p>
             <div className="grid gap-2 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label>Importe</Label>
+              <Field label="Importe">
                 <Input
                   type="number"
                   step="0.01"
@@ -165,11 +166,10 @@ export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
                   value={payAmount}
                   onChange={(e) => setPayAmount(e.target.value)}
                 />
-              </div>
-              <div className="space-y-1">
-                <Label>Método</Label>
+              </Field>
+              <Field label="Método">
                 <FormSelect value={payMethod} onValueChange={setPayMethod} options={METHOD_OPTIONS} />
-              </div>
+              </Field>
             </div>
             <Button
               size="sm"
@@ -198,6 +198,7 @@ export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
                     <DataTableTd className="text-right">
                       <Button asChild size="icon" variant="ghost">
                         <a
+                          aria-label="Descargar recibo"
                           href={downloadUrl(`/reports/receipts/student-payment/${p.id}`)}
                           target="_blank"
                           rel="noreferrer"
@@ -206,7 +207,12 @@ export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
                         </a>
                       </Button>
                       {isAdmin ? (
-                        <Button size="icon" variant="ghost" onClick={() => void voidPayment(p.id)}>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          aria-label="Anular cobro"
+                          onClick={() => void voidPayment(p.id)}
+                        >
                           <Trash2 className="h-4 w-4 text-expense" />
                         </Button>
                       ) : null}
