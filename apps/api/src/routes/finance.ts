@@ -4,6 +4,23 @@ import { recordAudit } from "../lib/audit.js";
 import { prisma } from "../lib/prisma.js";
 import { calendarRangeFilter, parseCalendarDate } from "../lib/dates.js";
 
+const MANAGED_MESSAGE: Record<"income" | "expense", string> = {
+  income:
+    "Esta categoría la gestiona la app: los cobros de cuotas se registran en Pagos y ya cuentan en el balance.",
+  expense:
+    "Esta categoría la gestiona la app: los pagos a profesores se registran en sus liquidaciones y ya cuentan en el balance.",
+};
+
+/** Error si la categoría no admite apuntes manuales (se duplicarían en el balance). */
+async function managedCategoryError(kind: "income" | "expense", categoryId: string | undefined) {
+  if (!categoryId) return null;
+  const category =
+    kind === "income"
+      ? await prisma.incomeCategory.findUnique({ where: { id: categoryId } })
+      : await prisma.expenseCategory.findUnique({ where: { id: categoryId } });
+  return category?.managedByApp ? MANAGED_MESSAGE[kind] : null;
+}
+
 export async function financeRoutes(app: FastifyInstance) {
   app.get("/incomes", async (request) => {
     const q = request.query as Record<string, string | undefined>;
@@ -24,6 +41,8 @@ export async function financeRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
     const d = parsed.data;
+    const managed = await managedCategoryError("income", d.categoryId);
+    if (managed) return reply.status(400).send({ error: managed });
     const saved = await prisma.incomeEntry.create({
       data: {
         date: parseCalendarDate(d.date),
@@ -50,6 +69,14 @@ export async function financeRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
     const d = parsed.data;
+    // Los apuntes antiguos de una categoría gestionada se pueden corregir o mover a
+    // otra categoría, pero no se puede llevar un apunte nuevo a una gestionada.
+    const current = await prisma.incomeEntry.findUnique({ where: { id }, select: { categoryId: true } });
+    if (!current) return reply.status(404).send({ error: "Apunte no encontrado" });
+    if (d.categoryId !== current.categoryId) {
+      const managed = await managedCategoryError("income", d.categoryId);
+      if (managed) return reply.status(400).send({ error: managed });
+    }
     const saved = await prisma.incomeEntry.update({
       where: { id },
       data: {
@@ -92,6 +119,8 @@ export async function financeRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
     const d = parsed.data;
+    const managed = await managedCategoryError("expense", d.categoryId);
+    if (managed) return reply.status(400).send({ error: managed });
     const saved = await prisma.expenseEntry.create({
       data: {
         date: parseCalendarDate(d.date),
@@ -117,6 +146,14 @@ export async function financeRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
     const d = parsed.data;
+    // Los apuntes antiguos de una categoría gestionada se pueden corregir o mover a
+    // otra categoría, pero no se puede llevar un apunte nuevo a una gestionada.
+    const current = await prisma.expenseEntry.findUnique({ where: { id }, select: { categoryId: true } });
+    if (!current) return reply.status(404).send({ error: "Apunte no encontrado" });
+    if (d.categoryId !== current.categoryId) {
+      const managed = await managedCategoryError("expense", d.categoryId);
+      if (managed) return reply.status(400).send({ error: managed });
+    }
     const saved = await prisma.expenseEntry.update({
       where: { id },
       data: {

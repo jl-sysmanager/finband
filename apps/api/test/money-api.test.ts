@@ -126,7 +126,14 @@ describe("contrato HTTP en euros", () => {
     const list = await client.request("GET", "/finance/incomes?from=2026-10-01&to=2026-10-31");
     expect(list.body[0].amount).toBe(45.99);
     const balance = await client.request("GET", `/reports/balance-monthly?yearMonth=${YM}`);
-    expect(balance.body).toMatchObject({ income: 45.99, expense: 128.5, balance: -82.51 });
+    // El balance incluye el cobro de 20,10 € registrado en la prueba anterior.
+    expect(balance.body).toMatchObject({
+      income: 45.99,
+      feeCollections: 20.1,
+      expense: 128.5,
+      teacherPayments: 0,
+      balance: -62.41,
+    });
   });
 
   it("liquidación de profesor", async () => {

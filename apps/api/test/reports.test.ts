@@ -49,11 +49,14 @@ it("el balance anual coincide mes a mes con el balance mensual", async () => {
   expect(annual.status).toBe(200);
   for (const row of annual.body.rows) {
     const monthly = await client.request("GET", `/reports/balance-monthly?yearMonth=${row.month}`);
-    expect({ ...row, month: undefined }).toEqual({ ...monthly.body, yearMonth: undefined });
+    const { month: _m, ...annualRow } = row;
+    const { yearMonth: _y, ...monthlyRow } = monthly.body;
+    expect(annualRow).toEqual(monthlyRow);
   }
   expect(annual.body.rows[0]).toMatchObject({ income: 150.1, expense: 30.3, balance: 119.8 });
-  expect(annual.body.rows[3]).toMatchObject({ feeCollections: 40 });
-  expect(annual.body.totals).toEqual({ income: 170.3, expense: 40.3, balance: 130 });
+  // El cobro de 40 € suma en el balance de abril.
+  expect(annual.body.rows[3]).toMatchObject({ feeCollections: 40, balance: 40 });
+  expect(annual.body.totals).toMatchObject({ income: 170.3, feeCollections: 40, expense: 40.3, balance: 170 });
 });
 
 it("ingresos por alumno y coste por profesor suman por persona", async () => {

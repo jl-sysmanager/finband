@@ -1,68 +1,107 @@
 import { DataTable, DataTableHead, DataTableRow, DataTableTd, DataTableTh } from "@/components/list/DataTable";
 import { formatMoney } from "@/lib/utils";
 
+type BalanceFigures = {
+  income: number;
+  feeCollections: number;
+  expense: number;
+  teacherPayments: number;
+  balance: number;
+  excludedManualIncome: number;
+  excludedManualExpense: number;
+};
+
+/** Aviso de apuntes manuales que no suman porque duplicarían cobros o pagos. */
+function ExcludedNote({ figures }: { figures: BalanceFigures }) {
+  if (!figures.excludedManualIncome && !figures.excludedManualExpense) return null;
+  return (
+    <p className="text-xs text-muted-foreground">
+      No incluido en el balance (apuntes manuales que duplicarían lo registrado en la app):{" "}
+      {formatMoney(figures.excludedManualIncome)} de cuotas y{" "}
+      {formatMoney(figures.excludedManualExpense)} de profesores.
+    </p>
+  );
+}
+
 export function PreviewTable({ reportId, data }: { reportId: string; data: unknown }) {
   if (reportId === "balance-monthly" && data && typeof data === "object") {
-    const d = data as {
-      yearMonth: string;
-      income: number;
-      expense: number;
-      feeCollections: number;
-      balance: number;
-    };
+    const d = data as BalanceFigures & { yearMonth: string };
     return (
-      <DataTable>
-        <DataTableHead>
-          <DataTableTh>Concepto</DataTableTh>
-          <DataTableTh className="text-right">Importe</DataTableTh>
-        </DataTableHead>
-        <tbody>
-          {[
-            ["Ingresos", d.income],
-            ["Gastos", d.expense],
-            ["Cobros cuotas", d.feeCollections],
-            ["Balance", d.balance],
-          ].map(([label, amount]) => (
-            <DataTableRow key={String(label)}>
-              <DataTableTd>{label}</DataTableTd>
-              <DataTableTd className="text-right font-medium">{formatMoney(Number(amount))}</DataTableTd>
+      <div className="space-y-2">
+        <DataTable>
+          <DataTableHead>
+            <DataTableTh>Concepto</DataTableTh>
+            <DataTableTh className="text-right">Importe</DataTableTh>
+          </DataTableHead>
+          <tbody>
+            {(
+              [
+                ["Ingresos (apuntes)", d.income, "+"],
+                ["Cobros de cuotas", d.feeCollections, "+"],
+                ["Gastos (apuntes)", d.expense, "−"],
+                ["Pagos a profesores", d.teacherPayments, "−"],
+              ] as const
+            ).map(([label, amount, sign]) => (
+              <DataTableRow key={label}>
+                <DataTableTd>
+                  <span className="mr-2 text-muted-foreground">{sign}</span>
+                  {label}
+                </DataTableTd>
+                <DataTableTd className="text-right">{formatMoney(amount)}</DataTableTd>
+              </DataTableRow>
+            ))}
+            <DataTableRow>
+              <DataTableTd className="font-semibold">Balance</DataTableTd>
+              <DataTableTd
+                className={`text-right font-semibold ${d.balance >= 0 ? "text-income" : "text-expense"}`}
+              >
+                {formatMoney(d.balance)}
+              </DataTableTd>
             </DataTableRow>
-          ))}
-        </tbody>
-      </DataTable>
+          </tbody>
+        </DataTable>
+        <ExcludedNote figures={d} />
+      </div>
     );
   }
 
   if (reportId === "balance-annual" && data && typeof data === "object") {
     const d = data as {
-      rows: Array<{ month: string; income: number; expense: number; balance: number }>;
-      totals: { income: number; expense: number; balance: number };
+      rows: Array<BalanceFigures & { month: string }>;
+      totals: BalanceFigures;
     };
+    const cells = (r: BalanceFigures, strong = false) =>
+      [r.income, r.feeCollections, r.expense, r.teacherPayments, r.balance].map((v, i) => (
+        <DataTableTd key={i} className={`text-right ${strong || i === 4 ? "font-medium" : ""}`}>
+          {formatMoney(v)}
+        </DataTableTd>
+      ));
     return (
-      <DataTable>
-        <DataTableHead>
-          <DataTableTh>Mes</DataTableTh>
-          <DataTableTh className="text-right">Ingresos</DataTableTh>
-          <DataTableTh className="text-right">Gastos</DataTableTh>
-          <DataTableTh className="text-right">Balance</DataTableTh>
-        </DataTableHead>
-        <tbody>
-          {d.rows.map((r) => (
-            <DataTableRow key={r.month}>
-              <DataTableTd>{r.month}</DataTableTd>
-              <DataTableTd className="text-right">{formatMoney(r.income)}</DataTableTd>
-              <DataTableTd className="text-right">{formatMoney(r.expense)}</DataTableTd>
-              <DataTableTd className="text-right">{formatMoney(r.balance)}</DataTableTd>
+      <div className="space-y-2">
+        <DataTable>
+          <DataTableHead>
+            <DataTableTh>Mes</DataTableTh>
+            <DataTableTh className="text-right">Ingresos</DataTableTh>
+            <DataTableTh className="text-right">Cobros cuotas</DataTableTh>
+            <DataTableTh className="text-right">Gastos</DataTableTh>
+            <DataTableTh className="text-right">Pagos profesores</DataTableTh>
+            <DataTableTh className="text-right">Balance</DataTableTh>
+          </DataTableHead>
+          <tbody>
+            {d.rows.map((r) => (
+              <DataTableRow key={r.month}>
+                <DataTableTd>{r.month}</DataTableTd>
+                {cells(r)}
+              </DataTableRow>
+            ))}
+            <DataTableRow>
+              <DataTableTd className="font-medium">Total</DataTableTd>
+              {cells(d.totals, true)}
             </DataTableRow>
-          ))}
-          <DataTableRow>
-            <DataTableTd className="font-medium">Total</DataTableTd>
-            <DataTableTd className="text-right font-medium">{formatMoney(d.totals.income)}</DataTableTd>
-            <DataTableTd className="text-right font-medium">{formatMoney(d.totals.expense)}</DataTableTd>
-            <DataTableTd className="text-right font-medium">{formatMoney(d.totals.balance)}</DataTableTd>
-          </DataTableRow>
-        </tbody>
-      </DataTable>
+          </tbody>
+        </DataTable>
+        <ExcludedNote figures={d.totals} />
+      </div>
     );
   }
 

@@ -8,7 +8,7 @@ import {
   finalizeProfessionalPdf,
   formatEuro,
 } from "../lib/pdf-template.js";
-import { fromCents, toCents } from "../lib/money.js";
+import { fromCents } from "../lib/money.js";
 import { prisma } from "../lib/prisma.js";
 import {
   reportDebtAging,
@@ -18,71 +18,28 @@ import {
   reportStudentsWithoutFee,
 } from "../lib/phase-a-reports.js";
 import { receiptRoutes } from "./receipts.js";
-import { monthDateRange, yearMonthOf } from "../lib/dates.js";
+import { yearMonthOf } from "../lib/dates.js";
+import {
+  balanceByMonth,
+  balanceForMonth,
+  balanceInEuros,
+  balanceReportRows,
+  sumBalances,
+} from "../lib/balance.js";
 
 const defaultYearMonth = () => yearMonthOf();
-const monthRange = monthDateRange;
 
-async function monthlyBalance(yearMonth: string) {
-  const { start, end } = monthRange(yearMonth);
-  const [income, expense, fees] = await Promise.all([
-    prisma.incomeEntry.aggregate({
-      where: { date: { gte: start, lte: end } },
-      _sum: { amount: true },
-    }),
-    prisma.expenseEntry.aggregate({
-      where: { date: { gte: start, lte: end } },
-      _sum: { amount: true },
-    }),
-    prisma.studentPayment.aggregate({
-      where: { paidAt: { gte: start, lte: end } },
-      _sum: { amount: true },
-    }),
-  ]);
-  // Sumas en céntimos; el informe devuelve euros.
-  return {
-    income: fromCents(income._sum.amount ?? 0),
-    expense: fromCents(expense._sum.amount ?? 0),
-    feeCollections: fromCents(fees._sum.amount ?? 0),
-    balance: fromCents((income._sum.amount ?? 0) - (expense._sum.amount ?? 0)),
-  };
+const monthsOfYear = (year: number) =>
+  Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
+
+/** Los 12 meses que terminan en el actual (informe de evolución). */
+function lastTwelveMonths() {
+  const now = new Date();
+  return Array.from({ length: 12 }, (_, i) => yearMonthOf(new Date(now.getFullYear(), now.getMonth() - 11 + i, 1)));
 }
 
-/** Balance de los 12 meses con tres consultas (antes eran 36 en serie). */
-async function annualBalanceRows(year: number) {
-  const start = monthRange(`${year}-01`).start;
-  const end = monthRange(`${year}-12`).end;
-  const [incomes, expenses, payments] = await Promise.all([
-    prisma.incomeEntry.findMany({
-      where: { date: { gte: start, lte: end } },
-      select: { date: true, amount: true },
-    }),
-    prisma.expenseEntry.findMany({
-      where: { date: { gte: start, lte: end } },
-      select: { date: true, amount: true },
-    }),
-    prisma.studentPayment.findMany({
-      where: { paidAt: { gte: start, lte: end } },
-      select: { paidAt: true, amount: true },
-    }),
-  ]);
-  const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
-  const totals = new Map(months.map((m) => [m, { income: 0, expense: 0, fees: 0 }]));
-  // Mismo criterio que monthlyBalance: rangos del mes en la zona de la escuela.
-  for (const r of incomes) totals.get(yearMonthOf(r.date))!.income += r.amount;
-  for (const r of expenses) totals.get(yearMonthOf(r.date))!.expense += r.amount;
-  for (const r of payments) totals.get(yearMonthOf(r.paidAt))!.fees += r.amount;
-  return months.map((month) => {
-    const t = totals.get(month)!;
-    return {
-      month,
-      income: fromCents(t.income),
-      expense: fromCents(t.expense),
-      feeCollections: fromCents(t.fees),
-      balance: fromCents(t.income - t.expense),
-    };
-  });
-}
+const EXCLUDED_NOTE =
+  "Los apuntes manuales en categorías gestionadas por la app (cobros de cuotas y pagos a profesores) no suman: se toman de los cobros y pagos registrados.";
 
 /** Pagado y pendiente acumulados por persona, agregados en la base. */
 function summarizeByPerson(
@@ -118,18 +75,27 @@ function sendXlsx(reply: FastifyReply, filename: string, buffer: Buffer) {
     .send(buffer);
 }
 
-async function pdfReport(title: string, rows: Array<[string, number]>, reference?: string) {
+async function pdfReport(
+  title: string,
+  rows: Array<[string, number]>,
+  reference?: string,
+  note?: string,
+) {
   const doc = createPdf();
   return finalizeProfessionalPdf(doc, title, async (d) => {
+    // La fila de balance va destacada en la barra final, no repetida en la tabla.
+    const balanceRow = rows.find(([label]) => label.toLowerCase().includes("balance"));
     drawTable(
       d,
       ["Concepto", "Importe"],
-      rows.map(([label, amount]) => [label, formatEuro(amount)]),
+      rows.filter((r) => r !== balanceRow).map(([label, amount]) => [label, formatEuro(amount)]),
       { alignRightFrom: 1 },
     );
-    const balanceRow = rows.find(([label]) => label.toLowerCase().includes("balance"));
     if (balanceRow) {
       drawTotalBar(d, balanceRow[0], balanceRow[1]);
+    }
+    if (note) {
+      d.font("Helvetica").fontSize(9).fillColor("#64748b").text(note);
     }
   }, reference);
 }
@@ -139,31 +105,26 @@ export async function reportRoutes(app: FastifyInstance) {
   app.get("/balance-monthly", async (request: FastifyRequest, reply: FastifyReply) => {
     const q = request.query as { yearMonth?: string; format?: string; inline?: string };
     const yearMonth = q.yearMonth ?? defaultYearMonth();
-    const data = await monthlyBalance(yearMonth);
+    const cents = await balanceForMonth(yearMonth);
+    const data = balanceInEuros(cents);
+    const rows = balanceReportRows(cents);
 
     if (q.format === "xlsx") {
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet("Balance");
       ws.addRow(["Mes", yearMonth]);
-      ws.addRow(["Ingresos", data.income]);
-      ws.addRow(["Gastos", data.expense]);
-      ws.addRow(["Cobros cuotas", data.feeCollections]);
-      ws.addRow(["Balance", data.balance]);
+      for (const row of rows) ws.addRow(row);
+      if (data.excludedManualIncome || data.excludedManualExpense) {
+        ws.addRow([]);
+        ws.addRow(["No incluido (apuntes duplicados de cuotas)", data.excludedManualIncome]);
+        ws.addRow(["No incluido (apuntes duplicados de profesores)", data.excludedManualExpense]);
+      }
       const buf = Buffer.from(await wb.xlsx.writeBuffer());
       return sendXlsx(reply, `balance-${yearMonth}.xlsx`, buf);
     }
 
     if (q.format === "pdf") {
-      const pdf = await pdfReport(
-        `Balance mensual ${yearMonth}`,
-        [
-          ["Ingresos", data.income],
-          ["Gastos", data.expense],
-          ["Cobros cuotas", data.feeCollections],
-          ["Balance", data.balance],
-        ],
-        yearMonth,
-      );
+      const pdf = await pdfReport(`Balance mensual ${yearMonth}`, rows, yearMonth, EXCLUDED_NOTE);
       const inline = q.inline === "1" || q.inline === "true";
       return sendPdf(reply, `balance-${yearMonth}.pdf`, pdf, inline);
     }
@@ -174,23 +135,23 @@ export async function reportRoutes(app: FastifyInstance) {
   app.get("/balance-annual", async (request: FastifyRequest, reply: FastifyReply) => {
     const q = request.query as { year?: string; format?: string; inline?: string };
     const year = Number(q.year) || new Date().getFullYear();
-    const rows = await annualBalanceRows(year);
-    const sum = (pick: (r: (typeof rows)[number]) => number) =>
-      fromCents(rows.reduce((cents, r) => cents + toCents(pick(r)), 0));
-    const totals = {
-      income: sum((r) => r.income),
-      expense: sum((r) => r.expense),
-      balance: sum((r) => r.balance),
-    };
+    const byMonth = await balanceByMonth(monthsOfYear(year));
+    const rows = [...byMonth].map(([month, b]) => ({ month, ...balanceInEuros(b) }));
+    const totals = balanceInEuros(sumBalances([...byMonth.values()]));
 
     if (q.format === "xlsx") {
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet(`Balance ${year}`);
-      ws.addRow(["Mes", "Ingresos", "Gastos", "Balance"]);
-      for (const r of rows) {
-        ws.addRow([r.month, r.income, r.expense, r.balance]);
-      }
-      ws.addRow(["Total", totals.income, totals.expense, totals.balance]);
+      const columns = (r: typeof totals) => [
+        r.income,
+        r.feeCollections,
+        r.expense,
+        r.teacherPayments,
+        r.balance,
+      ];
+      ws.addRow(["Mes", "Ingresos (apuntes)", "Cobros de cuotas", "Gastos (apuntes)", "Pagos a profesores", "Balance"]);
+      for (const r of rows) ws.addRow([r.month, ...columns(r)]);
+      ws.addRow(["Total", ...columns(totals)]);
       const buf = Buffer.from(await wb.xlsx.writeBuffer());
       return sendXlsx(reply, `balance-${year}.xlsx`, buf);
     }
@@ -302,13 +263,8 @@ export async function reportRoutes(app: FastifyInstance) {
 
   app.get("/evolution", async (request: FastifyRequest, reply: FastifyReply) => {
     const q = request.query as { format?: string; inline?: string };
-    const now = new Date();
-    const rows = [];
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      rows.push({ month: ym, ...(await monthlyBalance(ym)) });
-    }
+    const byMonth = await balanceByMonth(lastTwelveMonths());
+    const rows = [...byMonth].map(([month, b]) => ({ month, ...balanceInEuros(b) }));
     if (q.format === "pdf") {
       const pdf = await pdfReport(
         "Evolución ingresos y gastos (12 meses)",

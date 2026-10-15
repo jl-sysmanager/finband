@@ -82,7 +82,7 @@ export function FinancePage({ mode }: FinanceProps) {
   const categories = useQuery({
     queryKey: [isIncome ? "income-categories" : "expense-categories"],
     queryFn: () =>
-      api<Array<{ id: string; name: string }>>(
+      api<Array<{ id: string; name: string; managedByApp: boolean }>>(
         `/settings/${isIncome ? "income" : "expense"}-categories`,
       ),
   });
@@ -124,7 +124,9 @@ export function FinancePage({ mode }: FinanceProps) {
   function openForm(entry?: Entry) {
     setSaveError(null);
     setEditing(entry ?? null);
-    setCategoryId(entry?.categoryId ?? categories.data?.[0]?.id ?? "");
+    setCategoryId(
+      entry?.categoryId ?? categories.data?.find((c) => !c.managedByApp)?.id ?? "",
+    );
     setMethod(entry?.method ?? NO_METHOD);
     setSheetOpen(true);
   }
@@ -174,7 +176,14 @@ export function FinancePage({ mode }: FinanceProps) {
   }
 
   const formKey = editing?.id ?? "new";
-  const categoryOptions = (categories.data ?? []).map((c) => ({ value: c.id, label: c.name }));
+  // Las categorías gestionadas por la app (cobros de cuotas / pagos a profesores) no
+  // admiten apuntes nuevos; solo se muestran al editar un apunte antiguo que ya la usa.
+  const categoryOptions = (categories.data ?? [])
+    .filter((c) => !c.managedByApp || c.id === editing?.categoryId)
+    .map((c) => ({ value: c.id, label: c.managedByApp ? `${c.name} (gestionada por la app)` : c.name }));
+  const managedNote = isIncome
+    ? "Los cobros de cuotas se registran en Pagos y ya suman en el balance."
+    : "Los pagos a profesores se registran en sus liquidaciones y ya restan en el balance.";
   const methodOptions = [
     { value: NO_METHOD, label: "—" },
     ...PAYMENT_METHODS.map((m) => ({ value: m, label: PAYMENT_METHOD_LABELS[m] })),
@@ -230,13 +239,16 @@ export function FinancePage({ mode }: FinanceProps) {
               <Field label="Concepto" className="md:col-span-2">
                 <Input name="concept" required defaultValue={editing?.concept ?? ""} />
               </Field>
-              <Field label="Categoría">
-                <FormSelect
-                  value={categoryId}
-                  onValueChange={setCategoryId}
-                  options={categoryOptions}
-                />
-              </Field>
+              <div className="space-y-1">
+                <Field label="Categoría">
+                  <FormSelect
+                    value={categoryId}
+                    onValueChange={setCategoryId}
+                    options={categoryOptions}
+                  />
+                </Field>
+                <p className="text-xs text-muted-foreground">{managedNote}</p>
+              </div>
               <Field label="Importe">
                 <Input
                   name="amount"

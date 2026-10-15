@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { previewFeesForMonth } from "../lib/tariffs.js";
 import { fromCents } from "../lib/money.js";
 import { prisma } from "../lib/prisma.js";
+import { balanceForMonth } from "../lib/balance.js";
 import { calendarDateOf, monthDateRange, yearMonthOf } from "../lib/dates.js";
 
 function monthBounds(date = new Date()) {
@@ -11,28 +12,20 @@ function monthBounds(date = new Date()) {
 
 export async function dashboardRoutes(app: FastifyInstance) {
   app.get("/summary", async () => {
-    const { start, end, ym } = monthBounds();
+    const { ym } = monthBounds();
 
     const [
       students,
       teachers,
       classes,
-      incomeAgg,
-      expenseAgg,
+      balance,
       pendingFees,
       pendingPayouts,
     ] = await Promise.all([
       prisma.student.count({ where: { deletedAt: null, status: "ACTIVE" } }),
       prisma.teacher.count({ where: { deletedAt: null } }),
       prisma.classGroup.count({ where: { deletedAt: null } }),
-      prisma.incomeEntry.aggregate({
-        where: { date: { gte: start, lte: end } },
-        _sum: { amount: true },
-      }),
-      prisma.expenseEntry.aggregate({
-        where: { date: { gte: start, lte: end } },
-        _sum: { amount: true },
-      }),
+      balanceForMonth(ym),
       prisma.studentFee.findMany({
         where: { yearMonth: ym, status: { in: ["PENDING", "PARTIAL"] } },
         select: { totalAmount: true, amountPaid: true },
@@ -43,8 +36,6 @@ export async function dashboardRoutes(app: FastifyInstance) {
       }),
     ]);
 
-    const income = incomeAgg._sum.amount ?? 0;
-    const expenses = expenseAgg._sum.amount ?? 0;
     const pendingCollections = pendingFees.reduce(
       (s, f) => s + (f.totalAmount - f.amountPaid),
       0,
@@ -58,9 +49,10 @@ export async function dashboardRoutes(app: FastifyInstance) {
       students,
       teachers,
       classes,
-      monthlyIncome: fromCents(income),
-      monthlyExpenses: fromCents(expenses),
-      monthlyBalance: fromCents(income - expenses),
+      // Ingresos = apuntes + cobros de cuotas; gastos = apuntes + pagos a profesores.
+      monthlyIncome: fromCents(balance.income + balance.feeCollections),
+      monthlyExpenses: fromCents(balance.expense + balance.teacherPayments),
+      monthlyBalance: fromCents(balance.balance),
       pendingCollections: fromCents(pendingCollections),
       pendingTeacherPay: fromCents(pendingTeacherPay),
     };
@@ -81,8 +73,16 @@ export async function dashboardRoutes(app: FastifyInstance) {
     const zeroed = () => Object.fromEntries(months.map((m) => [m, 0])) as Record<string, number>;
 
     const [incomes, expenses, studentPayments, studentFees, teacherPayouts] = await Promise.all([
-      prisma.incomeEntry.findMany({ where: { date: { gte: start } }, select: { date: true, amount: true } }),
-      prisma.expenseEntry.findMany({ where: { date: { gte: start } }, select: { date: true, amount: true } }),
+      // Apuntes manuales sin los de categorías gestionadas por la app (ya están en
+      // cobros de cuotas y pagos a profesores).
+      prisma.incomeEntry.findMany({
+        where: { date: { gte: start }, category: { managedByApp: false } },
+        select: { date: true, amount: true },
+      }),
+      prisma.expenseEntry.findMany({
+        where: { date: { gte: start }, category: { managedByApp: false } },
+        select: { date: true, amount: true },
+      }),
       prisma.studentPayment.findMany({
         where: { paidAt: { gte: start } },
         select: { paidAt: true, amount: true },

@@ -1,5 +1,6 @@
 import { fromCents, toCents } from "./money.js";
 import { prisma } from "./prisma.js";
+import { balanceForMonth } from "./balance.js";
 import { calendarDateOf, localIsoDate } from "./dates.js";
 
 /*
@@ -171,41 +172,21 @@ export async function reportPayoutsExpectedPaid(yearMonth: string) {
 }
 
 async function monthFinancials(yearMonth: string) {
-  const { start, end } = (() => {
-    const { year, month } = parseYearMonth(yearMonth);
-    return {
-      start: new Date(year, month - 1, 1),
-      end: new Date(year, month, 0, 23, 59, 59, 999),
-    };
-  })();
-
-  const [incomeAgg, expenseAgg, feePaymentsAgg, activeStudents, feeStats, payoutStats] =
+  const [balance, activeStudents, feeStats, payoutStats] =
     await Promise.all([
-      prisma.incomeEntry.aggregate({
-        where: { date: { gte: start, lte: end } },
-        _sum: { amount: true },
-      }),
-      prisma.expenseEntry.aggregate({
-        where: { date: { gte: start, lte: end } },
-        _sum: { amount: true },
-      }),
-      prisma.studentPayment.aggregate({
-        where: { paidAt: { gte: start, lte: end } },
-        _sum: { amount: true },
-      }),
+      balanceForMonth(yearMonth),
       prisma.student.count({ where: { deletedAt: null, status: "ACTIVE" } }),
       reportFeesIssuedCollected(yearMonth),
       reportPayoutsExpectedPaid(yearMonth),
     ]);
 
-  const income = incomeAgg._sum.amount ?? 0;
-  const expenses = expenseAgg._sum.amount ?? 0;
-  const feeCollections = feePaymentsAgg._sum.amount ?? 0;
+  const feeCollections = balance.feeCollections;
 
   return {
-    income: fromCents(income),
-    expenses: fromCents(expenses),
-    accountingBalance: fromCents(income - expenses),
+    // Igual que el balance: apuntes + cobros de cuotas − apuntes − pagos a profesores.
+    income: fromCents(balance.income + balance.feeCollections),
+    expenses: fromCents(balance.expense + balance.teacherPayments),
+    accountingBalance: fromCents(balance.balance),
     feeCollections: fromCents(feeCollections),
     activeStudents,
     feesIssued: feeStats.totals.issued,
@@ -255,19 +236,19 @@ export async function reportExecutiveMonthly(yearMonth: string) {
         unit: "percent" as const,
       },
       {
-        label: "Ingresos contabilizados",
+        label: "Ingresos (apuntes + cobros de cuotas)",
         value: current.income,
         unit: "money" as const,
         deltaPct: delta(current.income, previous.income),
       },
       {
-        label: "Gastos contabilizados",
+        label: "Gastos (apuntes + pagos a profesores)",
         value: current.expenses,
         unit: "money" as const,
         deltaPct: delta(current.expenses, previous.expenses),
       },
       {
-        label: "Resultado contable (ing − gasto)",
+        label: "Balance (ingresos − gastos)",
         value: current.accountingBalance,
         unit: "money" as const,
       },

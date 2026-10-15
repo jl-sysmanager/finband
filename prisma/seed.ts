@@ -95,11 +95,17 @@ async function seedBase() {
     "Conciertos",
     "Donaciones",
   ];
+  // Categorías cuyos movimientos registra la propia app (cobros de cuotas / pagos a
+  // profesores): no admiten apuntes manuales para no duplicarlos en el balance.
+  const managedIncome = new Set(["Cuotas mensuales"]);
+  const managedExpense = new Set(["Profesores"]);
+
   for (let i = 0; i < incomeCats.length; i++) {
+    const managedByApp = managedIncome.has(incomeCats[i]!);
     await prisma.incomeCategory.upsert({
       where: { name: incomeCats[i]! },
-      update: {},
-      create: { name: incomeCats[i]!, sortOrder: i },
+      update: { managedByApp },
+      create: { name: incomeCats[i]!, sortOrder: i, managedByApp },
     });
   }
 
@@ -112,10 +118,11 @@ async function seedBase() {
     "Otros",
   ];
   for (let i = 0; i < expenseCats.length; i++) {
+    const managedByApp = managedExpense.has(expenseCats[i]!);
     await prisma.expenseCategory.upsert({
       where: { name: expenseCats[i]! },
-      update: {},
-      create: { name: expenseCats[i]!, sortOrder: i },
+      update: { managedByApp },
+      create: { name: expenseCats[i]!, sortOrder: i, managedByApp },
     });
   }
 }
@@ -509,48 +516,15 @@ async function seedMock() {
     update: {},
   });
 
-  const incomeCuotas = await prisma.incomeCategory.findFirst({
-    where: { name: "Cuotas mensuales" },
-  });
   const incomeMat = await prisma.incomeCategory.findFirst({
     where: { name: "Matrículas" },
-  });
-  const expProf = await prisma.expenseCategory.findFirst({
-    where: { name: "Profesores" },
   });
   const expMat = await prisma.expenseCategory.findFirst({
     where: { name: "Material didáctico" },
   });
 
   const today = new Date();
-  if (incomeCuotas) {
-    const incomes = [
-      {
-        id: "mock-income-1",
-        date: monthStart(),
-        concept: "Cuota Lucía García",
-        categoryId: incomeCuotas.id,
-        amount: eur(99),
-        method: PaymentMethod.BIZUM,
-      },
-      {
-        id: "mock-income-2",
-        date: new Date(today.getFullYear(), today.getMonth(), 8),
-        concept: "Cuota parcial Hugo López",
-        categoryId: incomeCuotas.id,
-        amount: eur(50),
-        method: PaymentMethod.TRANSFERENCIA,
-      },
-    ] as const;
-    for (const row of incomes) {
-      await prisma.incomeEntry.upsert({
-        where: { id: row.id },
-        create: row,
-        update: {},
-      });
-    }
-  }
-
+  // Los cobros de cuotas no se apuntan a mano: salen de los cobros registrados.
   if (incomeMat) {
     await prisma.incomeEntry.upsert({
       where: { id: "mock-income-3" },
@@ -566,15 +540,9 @@ async function seedMock() {
     });
   }
 
-  if (expProf && expMat) {
+  // Los pagos a profesores tampoco: salen de las liquidaciones.
+  if (expMat) {
     const expenses = [
-      {
-        id: "mock-expense-1",
-        date: monthStart(),
-        concept: "Nómina Laura Martínez (anticipo)",
-        categoryId: expProf.id,
-        amount: eur(900),
-      },
       {
         id: "mock-expense-2",
         date: new Date(today.getFullYear(), today.getMonth(), 10),
@@ -627,6 +595,26 @@ async function seedMock() {
         amount: calc.amount,
       },
     });
+    // Lo pagado sale del historial de pagos (igual que en la app).
+    if (amountPaid > 0) {
+      const payout = await prisma.teacherPayout.findUniqueOrThrow({
+        where: { teacherId_yearMonth: { teacherId, yearMonth: ym } },
+      });
+      await prisma.teacherPayoutPayment.upsert({
+        where: { id: `mock-payout-payment-${teacherId}` },
+        create: {
+          id: `mock-payout-payment-${teacherId}`,
+          payoutId: payout.id,
+          amount: amountPaid,
+          paidAt: monthStart(),
+        },
+        update: {},
+      });
+      await prisma.teacherPayout.update({
+        where: { id: payout.id },
+        data: { paidAt: monthStart() },
+      });
+    }
   }
 
   const session = await prisma.attendanceSession.upsert({

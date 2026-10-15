@@ -84,17 +84,25 @@ model AcademicYear {
 }
 
 model IncomeCategory {
-  id        String        @id @default(cuid())
-  name      String        @unique
-  sortOrder Int           @default(0)
-  entries   IncomeEntry[]
+  id           String        @id @default(cuid())
+  name         String        @unique
+  sortOrder    Int           @default(0)
+  /// La app registra estos movimientos por su cuenta (cobros de cuotas o pagos a
+  /// profesores): no se admiten apuntes manuales nuevos y los antiguos no cuentan
+  /// en el balance, para no duplicarlos.
+  managedByApp Boolean       @default(false)
+  entries      IncomeEntry[]
 }
 
 model ExpenseCategory {
-  id        String         @id @default(cuid())
-  name      String         @unique
-  sortOrder Int            @default(0)
-  entries   ExpenseEntry[]
+  id           String         @id @default(cuid())
+  name         String         @unique
+  sortOrder    Int            @default(0)
+  /// La app registra estos movimientos por su cuenta (cobros de cuotas o pagos a
+  /// profesores): no se admiten apuntes manuales nuevos y los antiguos no cuentan
+  /// en el balance, para no duplicarlos.
+  managedByApp Boolean        @default(false)
+  entries      ExpenseEntry[]
 }
 
 model Teacher {
