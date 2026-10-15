@@ -14,6 +14,7 @@ import {
   requireAdmin,
 } from "./lib/auth-plugin.js";
 import { config } from "./lib/config.js";
+import { configureSqlite } from "./lib/prisma.js";
 import { respondInEuros } from "./lib/money-api.js";
 import { authRoutes, publicAuthRoutes } from "./routes/auth.js";
 import { classRoutes } from "./routes/classes.js";
@@ -34,6 +35,7 @@ const webDist = process.env.WEB_DIST ?? path.join(__dirname, "../../web/dist");
 
 export async function buildApp(options: { logger?: boolean } = {}) {
   const app = Fastify({ logger: options.logger ?? true });
+  await configureSqlite();
 
   await app.register(cors, {
     origin: process.env.CORS_ORIGIN ?? true,

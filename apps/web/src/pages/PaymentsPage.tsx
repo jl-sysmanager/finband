@@ -38,6 +38,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ApiError, api, downloadUrl } from "@/lib/api";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { invalidateFinanceQueries } from "@/lib/query-invalidation";
 import { buildQuery, currentYearMonth, formatDate, formatMoney, roundMoney } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
@@ -106,17 +107,19 @@ export function PaymentsPage() {
   const [selectedPayoutId, setSelectedPayoutId] = useState<string | null>(null);
   const { confirm, dialog: confirmDialog } = useConfirm();
 
+  const debouncedSearch = useDebouncedValue(search.trim());
+
   const feeQuery = buildQuery({
     monthFrom,
     monthTo,
-    search: search || undefined,
+    search: debouncedSearch || undefined,
     status: feeStatus || undefined,
   });
 
   const payoutQuery = buildQuery({
     monthFrom,
     monthTo,
-    search: search || undefined,
+    search: debouncedSearch || undefined,
     status: payoutStatus || undefined,
   });
 

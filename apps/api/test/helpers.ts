@@ -74,6 +74,8 @@ export function enroll(studentId: string, classGroupId: string) {
 
 export type TestClient = {
   app: FastifyInstance;
+  /** Cookie de sesión, para peticiones hechas a mano con `app.inject`. */
+  token: string;
   request: (
     method: "GET" | "POST" | "PATCH" | "DELETE",
     url: string,
@@ -98,6 +100,7 @@ export async function adminClient(): Promise<TestClient> {
 
   return {
     app,
+    token: cookie.value,
     async request(method, url, body) {
       const res = await app.inject({
         method,

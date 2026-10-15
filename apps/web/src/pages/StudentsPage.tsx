@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { GraduationCap, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -18,6 +18,7 @@ import { TablePagination } from "@/components/list/TablePagination";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { buildQuery } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -41,16 +42,20 @@ export function StudentsPage() {
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
   const { dialog: confirmDialog } = useConfirm();
 
+  const debouncedSearch = useDebouncedValue(search.trim());
+
   useEffect(() => {
     setPage(1);
-  }, [search]);
+  }, [debouncedSearch]);
 
   const q = useQuery({
-    queryKey: ["students", search, page],
+    queryKey: ["students", debouncedSearch, page],
     queryFn: () =>
       api<{ items: StudentRow[]; total: number; page: number; limit: number }>(
-        `/students${buildQuery({ search: search || undefined, page: String(page), limit: String(PAGE_SIZE) })}`,
+        `/students${buildQuery({ search: debouncedSearch || undefined, page: String(page), limit: String(PAGE_SIZE) })}`,
       ),
+    // Mantiene la tabla mientras llega la página o búsqueda siguiente (sin parpadeo).
+    placeholderData: keepPreviousData,
   });
 
   const totalPages = Math.max(1, Math.ceil((q.data?.total ?? 0) / PAGE_SIZE));

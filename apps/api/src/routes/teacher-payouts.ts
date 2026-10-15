@@ -9,7 +9,11 @@ import { withLock } from "../lib/locks.js";
 import { formatMoneyEs } from "../lib/money-format.js";
 import { fromCents, sumCents } from "../lib/money.js";
 import { prisma } from "../lib/prisma.js";
-import { calculateTeacherPayout } from "../lib/teacher-payout.js";
+import {
+  calculateTeacherPayout,
+  calculateTeacherPayouts,
+  type PayoutCalculation,
+} from "../lib/teacher-payout.js";
 
 const YEAR_MONTH = /^\d{4}-\d{2}$/;
 
@@ -70,8 +74,8 @@ type UpsertResult = "generated" | "no_amount" | "has_payments";
 async function upsertTeacherPayout(
   teacherId: string,
   yearMonth: string,
+  calc: PayoutCalculation,
 ): Promise<{ result: UpsertResult; amount: number }> {
-  const calc = await calculateTeacherPayout(teacherId, yearMonth);
   if (calc.amount <= 0) return { result: "no_amount", amount: 0 };
   return withLock(payoutLockKey(teacherId, yearMonth), async () => {
     const existing = await prisma.teacherPayout.findUnique({
@@ -132,7 +136,10 @@ export async function teacherPayoutRoutes(app: FastifyInstance) {
     if (paidRange) where.payments = { some: { paidAt: paidRange } };
     return prisma.teacherPayout.findMany({
       where,
-      include: { teacher: true, payments: { orderBy: { paidAt: "desc" } } },
+      include: {
+        teacher: { select: { id: true, firstName: true, lastName: true } },
+        payments: { orderBy: { paidAt: "desc" } },
+      },
       orderBy: [{ yearMonth: "desc" }, { teacher: { lastName: "asc" } }],
     });
   });
@@ -145,7 +152,8 @@ export async function teacherPayoutRoutes(app: FastifyInstance) {
     if (teacherId) {
       const teacher = await prisma.teacher.findFirst({ where: { id: teacherId, deletedAt: null } });
       if (!teacher) return reply.status(404).send({ error: "Profesor no encontrado" });
-      const { result, amount } = await upsertTeacherPayout(teacherId, yearMonth);
+      const calc = await calculateTeacherPayout(teacherId, yearMonth);
+      const { result, amount } = await upsertTeacherPayout(teacherId, yearMonth, calc);
       if (result === "has_payments") {
         return reply.status(409).send({
           error: "La liquidación de ese mes ya tiene pagos; anúlelos antes de recalcularla",
@@ -153,11 +161,11 @@ export async function teacherPayoutRoutes(app: FastifyInstance) {
       }
       return { generated: result === "generated" ? 1 : 0, yearMonth, amount };
     }
-    const teachers = await prisma.teacher.findMany({ where: { deletedAt: null } });
+    const calcs = await calculateTeacherPayouts("active", yearMonth);
     let generated = 0;
     let skippedWithPayments = 0;
-    for (const t of teachers) {
-      const { result } = await upsertTeacherPayout(t.id, yearMonth);
+    for (const [id, calc] of calcs) {
+      const { result } = await upsertTeacherPayout(id, yearMonth, calc);
       if (result === "generated") generated++;
       if (result === "has_payments") skippedWithPayments++;
     }

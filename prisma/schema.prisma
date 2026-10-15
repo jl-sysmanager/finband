@@ -50,36 +50,36 @@ enum PayoutStatus {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  username     String   @unique
-  passwordHash String
-  role         UserRole @default(ADMIN)
+  id             String   @id @default(cuid())
+  username       String   @unique
+  passwordHash   String
+  role           UserRole @default(ADMIN)
   /// Se incrementa al cambiar la contraseña para invalidar las sesiones abiertas.
-  sessionVersion Int    @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  sessionVersion Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model SchoolSettings {
-  id              String  @id @default("default")
-  name            String  @default("Escuela de Música")
-  address         String?
-  phone           String?
-  email           String?
-  logoBase64      String?
-  logoPath        String?
-  activeYearId    String? @unique
-  activeYear      AcademicYear? @relation("ActiveYear", fields: [activeYearId], references: [id])
-  updatedAt       DateTime @updatedAt
+  id           String        @id @default("default")
+  name         String        @default("Escuela de Música")
+  address      String?
+  phone        String?
+  email        String?
+  logoBase64   String?
+  logoPath     String?
+  activeYearId String?       @unique
+  activeYear   AcademicYear? @relation("ActiveYear", fields: [activeYearId], references: [id])
+  updatedAt    DateTime      @updatedAt
 }
 
 model AcademicYear {
-  id        String   @id @default(cuid())
+  id        String          @id @default(cuid())
   name      String
   startDate DateTime
   endDate   DateTime
-  isActive  Boolean  @default(false)
-  createdAt DateTime @default(now())
+  isActive  Boolean         @default(false)
+  createdAt DateTime        @default(now())
   activeFor SchoolSettings? @relation("ActiveYear")
 }
 
@@ -98,23 +98,23 @@ model ExpenseCategory {
 }
 
 model Teacher {
-  id             String        @id @default(cuid())
-  firstName      String
-  lastName       String
-  phone          String?
-  email          String?
-  specialty      String?
-  hourlyRate     Int           @default(0)
-  monthlySalary  Int  ?
-  costPerClass   Int  ?
-  weeklyHours    Float?
-  transportCostPerDay Int      @default(0)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  deletedAt      DateTime?
-  classGroups    ClassGroup[]
-  primaryStudents Student[]    @relation("PrimaryTeacher")
-  payouts        TeacherPayout[]
+  id                  String          @id @default(cuid())
+  firstName           String
+  lastName            String
+  phone               String?
+  email               String?
+  specialty           String?
+  hourlyRate          Int             @default(0)
+  monthlySalary       Int?
+  costPerClass        Int?
+  weeklyHours         Float?
+  transportCostPerDay Int             @default(0)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  deletedAt           DateTime?
+  classGroups         ClassGroup[]
+  primaryStudents     Student[]       @relation("PrimaryTeacher")
+  payouts             TeacherPayout[]
 }
 
 model Student {
@@ -131,7 +131,7 @@ model Student {
   level            String?
   primaryTeacherId String?
   primaryTeacher   Teacher?          @relation("PrimaryTeacher", fields: [primaryTeacherId], references: [id])
-  monthlyFee       Int  ?
+  monthlyFee       Int?
   status           StudentStatus     @default(ACTIVE)
   deletedAt        DateTime?
   createdAt        DateTime          @default(now())
@@ -139,36 +139,40 @@ model Student {
   enrollments      Enrollment[]
   discounts        StudentDiscount[]
   fees             StudentFee[]
+
+  @@index([deletedAt, status])
 }
 
 model ClassGroup {
-  id              String             @id @default(cuid())
+  id              String              @id @default(cuid())
   name            String
   type            ClassType
   teacherId       String
-  teacher         Teacher            @relation(fields: [teacherId], references: [id])
+  teacher         Teacher             @relation(fields: [teacherId], references: [id])
   room            String?
-  durationMinutes Int                @default(60)
-  maxStudents     Int                @default(1)
+  durationMinutes Int                 @default(60)
+  maxStudents     Int                 @default(1)
   notes           String?
   /// Borrado lógico: la clase deja de existir para el futuro, pero sigue
   /// contando en las liquidaciones de los días en que se impartió.
   deletedAt       DateTime?
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
   enrollments     Enrollment[]
   sessions        AttendanceSession[]
   scheduleSlots   ClassScheduleSlot[]
+
+  @@index([teacherId])
 }
 
 /// Horario recurrente semanal (1 = lunes … 7 = domingo). Horas en HH:mm.
 model ClassScheduleSlot {
-  id           String     @id @default(cuid())
-  classGroupId String
-  classGroup   ClassGroup @relation(fields: [classGroupId], references: [id], onDelete: Cascade)
-  dayOfWeek    Int
-  startTime    String
-  endTime      String
+  id            String                      @id @default(cuid())
+  classGroupId  String
+  classGroup    ClassGroup                  @relation(fields: [classGroupId], references: [id], onDelete: Cascade)
+  dayOfWeek     Int
+  startTime     String
+  endTime       String
   cancellations ClassScheduleCancellation[]
 
   @@unique([classGroupId, dayOfWeek, startTime])
@@ -184,6 +188,7 @@ model ClassScheduleCancellation {
   createdAt      DateTime          @default(now())
 
   @@unique([scheduleSlotId, sessionDate])
+  @@index([sessionDate])
 }
 
 model Enrollment {
@@ -196,84 +201,93 @@ model Enrollment {
   active       Boolean    @default(true)
 
   @@unique([studentId, classGroupId])
+  @@index([classGroupId])
 }
 
 model TariffRule {
-  id          String     @id @default(cuid())
-  name        String
-  instrument  String?
-  level       String?
-  classType   ClassType?
-  amount      Int  
-  priority    Int        @default(0)
-  active      Boolean    @default(true)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  id         String     @id @default(cuid())
+  name       String
+  instrument String?
+  level      String?
+  classType  ClassType?
+  amount     Int
+  priority   Int        @default(0)
+  active     Boolean    @default(true)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
 }
 
 model StudentDiscount {
-  id        String       @id @default(cuid())
-  studentId String
-  student   Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  name      String
-  type      DiscountType
-  value     Int  
-  isScholarship Boolean  @default(false)
-  validFrom DateTime?
-  validTo   DateTime?
-  active    Boolean      @default(true)
-  createdAt DateTime     @default(now())
+  id            String       @id @default(cuid())
+  studentId     String
+  student       Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  name          String
+  type          DiscountType
+  value         Int
+  isScholarship Boolean      @default(false)
+  validFrom     DateTime?
+  validTo       DateTime?
+  active        Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+
+  @@index([studentId])
 }
 
 model StudentFee {
-  id          String           @id @default(cuid())
-  studentId   String
-  student     Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  yearMonth   String
-  baseAmount  Int  
-  discountAmount Int           @default(0)
-  totalAmount Int  
-  amountPaid  Int              @default(0)
-  status      FeeStatus        @default(PENDING)
-  dueDate     DateTime?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-  payments    StudentPayment[]
-  lineItems   String?
+  id             String           @id @default(cuid())
+  studentId      String
+  student        Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  yearMonth      String
+  baseAmount     Int
+  discountAmount Int              @default(0)
+  totalAmount    Int
+  amountPaid     Int              @default(0)
+  status         FeeStatus        @default(PENDING)
+  dueDate        DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  payments       StudentPayment[]
+  lineItems      String?
 
   @@unique([studentId, yearMonth])
+  @@index([yearMonth, status])
+  @@index([status])
 }
 
 model StudentPayment {
   id        String        @id @default(cuid())
   feeId     String
   fee       StudentFee    @relation(fields: [feeId], references: [id], onDelete: Cascade)
-  amount    Int  
+  amount    Int
   method    PaymentMethod
   paidAt    DateTime      @default(now())
   notes     String?
   createdAt DateTime      @default(now())
+
+  @@index([feeId])
+  @@index([paidAt])
 }
 
 model TeacherPayout {
-  id          String        @id @default(cuid())
-  teacherId   String
-  teacher     Teacher       @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  yearMonth   String
-  baseAmount  Int           @default(0)
-  transportAmount Int       @default(0)
-  workDays    Int           @default(0)
-  amount      Int  
-  amountPaid  Int           @default(0)
-  status      PayoutStatus  @default(PENDING)
-  notes       String?
+  id              String                 @id @default(cuid())
+  teacherId       String
+  teacher         Teacher                @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  yearMonth       String
+  baseAmount      Int                    @default(0)
+  transportAmount Int                    @default(0)
+  workDays        Int                    @default(0)
+  amount          Int
+  amountPaid      Int                    @default(0)
+  status          PayoutStatus           @default(PENDING)
+  notes           String?
   /// Fecha del último pago (se mantiene a partir de `payments`).
-  paidAt      DateTime?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  payments    TeacherPayoutPayment[]
+  paidAt          DateTime?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  payments        TeacherPayoutPayment[]
 
   @@unique([teacherId, yearMonth])
+  @@index([yearMonth, status])
 }
 
 /// Cada pago realizado a cuenta de una liquidación. `TeacherPayout.amountPaid` es su suma.
@@ -281,7 +295,7 @@ model TeacherPayoutPayment {
   id        String        @id @default(cuid())
   payoutId  String
   payout    TeacherPayout @relation(fields: [payoutId], references: [id], onDelete: Cascade)
-  amount    Int  
+  amount    Int
   paidAt    DateTime      @default(now())
   notes     String?
   createdAt DateTime      @default(now())
@@ -295,11 +309,13 @@ model IncomeEntry {
   concept    String
   categoryId String
   category   IncomeCategory @relation(fields: [categoryId], references: [id])
-  amount     Int  
+  amount     Int
   method     PaymentMethod?
   notes      String?
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt
+
+  @@index([date])
 }
 
 model ExpenseEntry {
@@ -308,10 +324,12 @@ model ExpenseEntry {
   concept    String
   categoryId String
   category   ExpenseCategory @relation(fields: [categoryId], references: [id])
-  amount     Int  
+  amount     Int
   notes      String?
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt
+
+  @@index([date])
 }
 
 model AttendanceSession {

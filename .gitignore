@@ -8,3 +8,5 @@ prisma/data/
 .DS_Store
 data/.jwt-secret
 data/*.bak
+data/*.db-wal
+data/*.db-shm

@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { recordAudit } from "../lib/audit.js";
 import { assertSqliteBuffer, resolveSqlitePath } from "../lib/database-path.js";
-import { prisma } from "../lib/prisma.js";
+import { configureSqlite, prisma } from "../lib/prisma.js";
 
 const MAX_BACKUP_BYTES = 80 * 1024 * 1024;
 const SIDE_FILE_SUFFIXES = ["-journal", "-wal", "-shm"];
@@ -49,6 +49,7 @@ async function swapDatabaseFile(source: string, dbPath: string) {
   await removeSideFiles(dbPath);
   await fs.rename(source, dbPath);
   await prisma.$connect();
+  await configureSqlite();
 }
 
 /** Aplica las migraciones pendientes: la copia puede venir de una versión anterior. */

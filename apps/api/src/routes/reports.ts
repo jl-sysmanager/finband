@@ -48,6 +48,56 @@ async function monthlyBalance(yearMonth: string) {
   };
 }
 
+/** Balance de los 12 meses con tres consultas (antes eran 36 en serie). */
+async function annualBalanceRows(year: number) {
+  const start = monthRange(`${year}-01`).start;
+  const end = monthRange(`${year}-12`).end;
+  const [incomes, expenses, payments] = await Promise.all([
+    prisma.incomeEntry.findMany({
+      where: { date: { gte: start, lte: end } },
+      select: { date: true, amount: true },
+    }),
+    prisma.expenseEntry.findMany({
+      where: { date: { gte: start, lte: end } },
+      select: { date: true, amount: true },
+    }),
+    prisma.studentPayment.findMany({
+      where: { paidAt: { gte: start, lte: end } },
+      select: { paidAt: true, amount: true },
+    }),
+  ]);
+  const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
+  const totals = new Map(months.map((m) => [m, { income: 0, expense: 0, fees: 0 }]));
+  // Mismo criterio que monthlyBalance: rangos del mes en la zona de la escuela.
+  for (const r of incomes) totals.get(yearMonthOf(r.date))!.income += r.amount;
+  for (const r of expenses) totals.get(yearMonthOf(r.date))!.expense += r.amount;
+  for (const r of payments) totals.get(yearMonthOf(r.paidAt))!.fees += r.amount;
+  return months.map((month) => {
+    const t = totals.get(month)!;
+    return {
+      month,
+      income: fromCents(t.income),
+      expense: fromCents(t.expense),
+      feeCollections: fromCents(t.fees),
+      balance: fromCents(t.income - t.expense),
+    };
+  });
+}
+
+/** Pagado y pendiente acumulados por persona, agregados en la base. */
+function summarizeByPerson(
+  groups: Array<{ id: string; paid: number; total: number }>,
+  names: Map<string, string>,
+) {
+  return groups
+    .map((g) => ({
+      name: names.get(g.id) ?? "—",
+      paid: fromCents(g.paid),
+      pending: fromCents(g.total - g.paid),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function sendPdf(reply: FastifyReply, filename: string, buffer: Buffer, inline = false) {
   const disposition = inline
     ? "inline"
@@ -124,11 +174,7 @@ export async function reportRoutes(app: FastifyInstance) {
   app.get("/balance-annual", async (request: FastifyRequest, reply: FastifyReply) => {
     const q = request.query as { year?: string; format?: string; inline?: string };
     const year = Number(q.year) || new Date().getFullYear();
-    const rows: Array<{ month: string } & Awaited<ReturnType<typeof monthlyBalance>>> = [];
-    for (let m = 1; m <= 12; m++) {
-      const ym = `${year}-${String(m).padStart(2, "0")}`;
-      rows.push({ month: ym, ...(await monthlyBalance(ym)) });
-    }
+    const rows = await annualBalanceRows(year);
     const sum = (pick: (r: (typeof rows)[number]) => number) =>
       fromCents(rows.reduce((cents, r) => cents + toCents(pick(r)), 0));
     const totals = {
@@ -154,24 +200,22 @@ export async function reportRoutes(app: FastifyInstance) {
 
   app.get("/income-by-student", async (request: FastifyRequest, reply: FastifyReply) => {
     const q = request.query as { format?: string };
-    const fees = await prisma.studentFee.findMany({
-      include: { student: true },
+    const groups = await prisma.studentFee.groupBy({
+      by: ["studentId"],
+      _sum: { amountPaid: true, totalAmount: true },
     });
-    const map = new Map<string, { name: string; paid: number; pending: number }>();
-    for (const f of fees) {
-      const key = f.studentId;
-      const cur = map.get(key) ?? {
-        name: `${f.student.firstName} ${f.student.lastName}`,
-        paid: 0,
-        pending: 0,
-      };
-      cur.paid += f.amountPaid;
-      cur.pending += f.totalAmount - f.amountPaid;
-      map.set(key, cur);
-    }
-    const rows = [...map.values()]
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((r) => ({ ...r, paid: fromCents(r.paid), pending: fromCents(r.pending) }));
+    const students = await prisma.student.findMany({
+      where: { id: { in: groups.map((g) => g.studentId) } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    const rows = summarizeByPerson(
+      groups.map((g) => ({
+        id: g.studentId,
+        paid: g._sum.amountPaid ?? 0,
+        total: g._sum.totalAmount ?? 0,
+      })),
+      new Map(students.map((st) => [st.id, `${st.firstName} ${st.lastName}`])),
+    );
 
     if (q.format === "xlsx") {
       const wb = new ExcelJS.Workbook();
@@ -186,22 +230,22 @@ export async function reportRoutes(app: FastifyInstance) {
 
   app.get("/cost-by-teacher", async (request: FastifyRequest, reply: FastifyReply) => {
     const q = request.query as { format?: string };
-    const payouts = await prisma.teacherPayout.findMany({ include: { teacher: true } });
-    const map = new Map<string, { name: string; paid: number; pending: number }>();
-    for (const p of payouts) {
-      const key = p.teacherId;
-      const cur = map.get(key) ?? {
-        name: `${p.teacher.firstName} ${p.teacher.lastName}`,
-        paid: 0,
-        pending: 0,
-      };
-      cur.paid += p.amountPaid;
-      cur.pending += p.amount - p.amountPaid;
-      map.set(key, cur);
-    }
-    const rows = [...map.values()]
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((r) => ({ ...r, paid: fromCents(r.paid), pending: fromCents(r.pending) }));
+    const groups = await prisma.teacherPayout.groupBy({
+      by: ["teacherId"],
+      _sum: { amountPaid: true, amount: true },
+    });
+    const teachers = await prisma.teacher.findMany({
+      where: { id: { in: groups.map((g) => g.teacherId) } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    const rows = summarizeByPerson(
+      groups.map((g) => ({
+        id: g.teacherId,
+        paid: g._sum.amountPaid ?? 0,
+        total: g._sum.amount ?? 0,
+      })),
+      new Map(teachers.map((t) => [t.id, `${t.firstName} ${t.lastName}`])),
+    );
 
     if (q.format === "xlsx") {
       const wb = new ExcelJS.Workbook();

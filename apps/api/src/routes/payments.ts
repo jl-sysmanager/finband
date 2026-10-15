@@ -105,7 +105,7 @@ export async function paymentRoutes(app: FastifyInstance) {
     return prisma.studentFee.findMany({
       where,
       include: {
-        student: true,
+        student: { select: { id: true, firstName: true, lastName: true } },
         payments: paymentsInclude,
       },
       orderBy: [{ yearMonth: "desc" }, { student: { lastName: "asc" } }],
