@@ -45,6 +45,15 @@ export async function studentRoutes(app: FastifyInstance) {
     return { items, total, page, limit };
   });
 
+  /** Lista ligera de alumnos activos para selectores (sin paginar). */
+  app.get("/options", async () => {
+    return prisma.student.findMany({
+      where: { deletedAt: null, status: "ACTIVE" },
+      select: { id: true, firstName: true, lastName: true },
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    });
+  });
+
   app.get("/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     const student = await prisma.student.findFirst({

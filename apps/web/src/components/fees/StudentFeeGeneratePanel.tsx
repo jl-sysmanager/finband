@@ -3,6 +3,7 @@ import { MonthSelect } from "@/components/form/MonthSelect";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { ApiError, api } from "@/lib/api";
+import { invalidateFinanceQueries } from "@/lib/query-invalidation";
 import { currentYearMonth, formatMoney } from "@/lib/utils";
 import { useState } from "react";
 
@@ -45,8 +46,7 @@ export function StudentFeeGeneratePanel({
       } else {
         setMessage(`Cuota de ${data.yearMonth} generada: ${formatMoney(data.totalAmount)}`);
       }
-      qc.invalidateQueries({ queryKey: ["student", studentId] });
-      qc.invalidateQueries({ queryKey: ["student-fees"] });
+      invalidateFinanceQueries(qc);
       onGenerated?.();
     },
     onError: (err) => {

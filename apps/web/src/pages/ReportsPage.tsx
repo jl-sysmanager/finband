@@ -477,7 +477,11 @@ export function ReportsPage() {
   const [selectedId, setSelectedId] = useState(reports[0]!.id);
   const [yearMonth, setYearMonth] = useState(currentYearMonth());
   const [year, setYear] = useState(String(new Date().getFullYear()));
-  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+  const [pdfPreview, setPdfPreview] = useState<
+    { status: "idle" } | { status: "loading" } | { status: "ready"; url: string } | { status: "error" }
+  >({ status: "idle" });
+  const [pdfRequested, setPdfRequested] = useState(false);
+  const [pdfAttempt, setPdfAttempt] = useState(0);
 
   const selected = useMemo(
     () => reports.find((r) => r.id === selectedId) ?? reports[0]!,
@@ -493,29 +497,37 @@ export function ReportsPage() {
     ? downloadHref(selected, "pdf", yearMonth, year, true)
     : null;
 
+  // Al cambiar de informe o de periodo, la vista previa PDF vuelve a pedirse a demanda
+  // (generar un PDF en el servidor en cada cambio de filtro es caro).
   useEffect(() => {
-    if (!pdfFetchUrl) {
-      setPdfBlobUrl(null);
+    setPdfRequested(false);
+  }, [pdfFetchUrl]);
+
+  useEffect(() => {
+    if (!pdfFetchUrl || !pdfRequested) {
+      setPdfPreview({ status: "idle" });
       return;
     }
     let cancelled = false;
     let objectUrl: string | null = null;
+    setPdfPreview({ status: "loading" });
     (async () => {
       try {
         const res = await fetch(pdfFetchUrl, { credentials: "include" });
-        if (!res.ok || cancelled) return;
+        if (!res.ok) throw new Error(String(res.status));
         const blob = await res.blob();
+        if (cancelled) return;
         objectUrl = URL.createObjectURL(blob);
-        if (!cancelled) setPdfBlobUrl(objectUrl);
+        setPdfPreview({ status: "ready", url: objectUrl });
       } catch {
-        if (!cancelled) setPdfBlobUrl(null);
+        if (!cancelled) setPdfPreview({ status: "error" });
       }
     })();
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [pdfFetchUrl]);
+  }, [pdfFetchUrl, pdfRequested, pdfAttempt]);
 
   return (
     <WorkspaceShell
@@ -591,14 +603,26 @@ export function ReportsPage() {
               {selected.pdf ? (
                 <div>
                   <p className="mb-2 text-sm font-medium">Vista previa PDF</p>
-                  {pdfBlobUrl ? (
+                  {pdfPreview.status === "ready" ? (
                     <iframe
+                      key={pdfPreview.url}
                       title={`PDF ${selected.label}`}
-                      src={pdfBlobUrl}
+                      src={pdfPreview.url}
                       className="h-[480px] w-full rounded-lg border border-border bg-muted/20"
                     />
-                  ) : (
+                  ) : pdfPreview.status === "loading" ? (
                     <p className="text-sm text-muted-foreground">Generando PDF…</p>
+                  ) : pdfPreview.status === "error" ? (
+                    <div className="flex items-center gap-3">
+                      <p className="text-sm text-destructive">No se pudo generar el PDF.</p>
+                      <Button size="sm" variant="outline" onClick={() => setPdfAttempt((n) => n + 1)}>
+                        Reintentar
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={() => setPdfRequested(true)}>
+                      Ver vista previa PDF
+                    </Button>
                   )}
                 </div>
               ) : null}

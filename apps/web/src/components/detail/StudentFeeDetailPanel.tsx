@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { FEE_STATUS_LABELS, PAYMENT_METHOD_LABELS, PAYMENT_METHODS } from "@finband/shared";
 import { Bell, FileText, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FormSelect } from "@/components/form/FormSelect";
 import { FeeReminderDialog } from "@/components/fees/FeeReminderDialog";
 import { feeStatusBadge } from "@/components/ui/badge";
@@ -17,7 +17,8 @@ import {
   DataTableTh,
 } from "@/components/list/DataTable";
 import { ApiError, api, downloadUrl } from "@/lib/api";
-import { formatDate, formatMoney } from "@/lib/utils";
+import { invalidateFinanceQueries } from "@/lib/query-invalidation";
+import { formatDate, formatMoney, roundMoney } from "@/lib/utils";
 import { toast } from "@/stores/toast";
 import { useAuth } from "@/stores/auth";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -46,8 +47,13 @@ export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
   const qc = useQueryClient();
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
   const { confirm, dialog: confirmDialog } = useConfirm();
-  const pending = Math.max(0, fee.totalAmount - fee.amountPaid);
+  const pending = Math.max(0, roundMoney(fee.totalAmount - fee.amountPaid));
   const [payAmount, setPayAmount] = useState(pending > 0 ? String(pending) : "");
+  // El panel no se vuelve a montar tras un cobro (perdería el aviso de recibo):
+  // se actualiza el importe propuesto cuando cambia lo pendiente.
+  useEffect(() => {
+    setPayAmount(pending > 0 ? String(pending) : "");
+  }, [pending]);
   const [payMethod, setPayMethod] = useState("EFECTIVO");
   const [reminderOpen, setReminderOpen] = useState(false);
 
@@ -62,7 +68,7 @@ export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
         }),
       }),
     onSuccess: async (data) => {
-      await qc.invalidateQueries({ queryKey: ["student-fees"] });
+      await invalidateFinanceQueries(qc);
       if (data?.id) {
         const ok = await confirm({
           title: "Recibo",
@@ -78,13 +84,13 @@ export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
 
   const deletePayment = useMutation({
     mutationFn: (id: string) => api(`/payments/student-payments/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["student-fees"] }),
+    onSuccess: () => invalidateFinanceQueries(qc),
   });
 
   const deleteFee = useMutation({
     mutationFn: () => api(`/payments/student-fees/${fee.id}`, { method: "DELETE" }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["student-fees"] });
+      invalidateFinanceQueries(qc);
       onDeleted?.();
       onClose?.();
     },

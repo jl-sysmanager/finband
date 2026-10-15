@@ -1,7 +1,7 @@
 import { WEEKDAYS, parseTimeToMinutes, weekdayLabel } from "@finband/shared";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { addDaysIso, formatShortDate } from "@/lib/utils";
+import { addDaysIso, formatShortDate, todayISO } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 export type ScheduleOccurrence = {
@@ -58,6 +58,8 @@ export function WeeklyCalendarGrid({
 
   const active = occurrences.filter((o) => !o.cancelled);
   const cancelledCount = occurrences.filter((o) => o.cancelled).length;
+  // Día local del navegador (toISOString daría el día UTC: de 00:00 a 02:00 en España marcaría el anterior).
+  const today = todayISO();
 
   return (
     <div className="space-y-3">
@@ -76,7 +78,7 @@ export function WeeklyCalendarGrid({
             <div className="p-2" />
             {WEEKDAYS.map((d, i) => {
               const dateIso = addDaysIso(weekStartIso, i);
-              const isToday = dateIso === new Date().toISOString().slice(0, 10);
+              const isToday = dateIso === today;
               return (
                 <div
                   key={d.value}

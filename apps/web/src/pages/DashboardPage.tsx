@@ -15,6 +15,7 @@ import {
   DataTableTh,
 } from "@/components/list/DataTable";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
@@ -122,6 +123,7 @@ export function DashboardPage() {
 
   const s = summary.data;
   const a = actions.data;
+  const failed = [summary, movements, due, actions].filter((q) => q.isError);
   const dueTotal = (due.data ?? []).reduce((acc, d) => acc + d.pending, 0);
 
   return (
@@ -145,6 +147,19 @@ export function DashboardPage() {
     >
       {isAdmin ? <MonthCloseWizard open={closeOpen} onOpenChange={setCloseOpen} /> : null}
 
+      {failed.length > 0 ? (
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span>
+              No se pudieron cargar algunos datos del panel: las cifras pueden estar incompletas.
+            </span>
+            <Button size="sm" variant="outline" onClick={() => failed.forEach((q) => void q.refetch())}>
+              Reintentar
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       <div className="grid gap-4 lg:grid-cols-12">
         <section className="lg:col-span-12">
           <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
@@ -161,6 +176,8 @@ export function DashboardPage() {
                 <Skeleton key={i} className="h-36 rounded-2xl" />
               ))}
             </div>
+          ) : actions.isError ? (
+            <p className="text-sm text-destructive">No se pudieron calcular las prioridades.</p>
           ) : (
             <div className="grid gap-3 sm:grid-cols-3">
               <OperativeTile

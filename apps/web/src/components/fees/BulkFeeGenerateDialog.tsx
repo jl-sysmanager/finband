@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { ApiError, api } from "@/lib/api";
+import { invalidateFinanceQueries } from "@/lib/query-invalidation";
 import { toast } from "@/stores/toast";
 import { currentYearMonth, formatMoney } from "@/lib/utils";
 
@@ -77,9 +78,7 @@ export function BulkFeeGenerateDialog({ open, onOpenChange, defaultMonth }: Prop
       const msg = `Cuotas generadas/actualizadas: ${data.generated}. Omitidos: ${data.skipped}.`;
       setMessage(msg);
       toast(msg, "success");
-      qc.invalidateQueries({ queryKey: ["student-fees"] });
-      qc.invalidateQueries({ queryKey: ["dashboard-action-items"] });
-      qc.invalidateQueries({ queryKey: ["bulk-fee-preview"] });
+      invalidateFinanceQueries(qc);
     },
     onError: (err) => {
       setMessage(null);

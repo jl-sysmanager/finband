@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from "@finband/shared";
 import { Plus, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { TablePagination } from "@/components/list/TablePagination";
 import { usePagination } from "@/hooks/usePagination";
 import { FormSelect } from "@/components/form/FormSelect";
@@ -77,11 +77,7 @@ export function FinancePage({ mode }: FinanceProps) {
     );
   }, [entries.data, search]);
 
-  const pagination = usePagination(filteredEntries, 12);
-
-  useEffect(() => {
-    pagination.setPage(1);
-  }, [search, from, to, mode]);
+  const pagination = usePagination(filteredEntries, 12, `${mode}|${from}|${to}|${search}`);
 
   const categories = useQuery({
     queryKey: [isIncome ? "income-categories" : "expense-categories"],

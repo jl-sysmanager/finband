@@ -3,6 +3,7 @@ import { MonthSelect } from "@/components/form/MonthSelect";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { ApiError, api } from "@/lib/api";
+import { invalidateFinanceQueries } from "@/lib/query-invalidation";
 import { buildQuery, currentYearMonth, formatMoney } from "@/lib/utils";
 import { useState } from "react";
 
@@ -62,7 +63,7 @@ export function TeacherPayoutPanel({
           `Liquidación ${data.yearMonth} registrada${data.amount != null ? `: ${formatMoney(data.amount)}` : ""}.`,
         );
       }
-      qc.invalidateQueries({ queryKey: ["teacher-payouts"] });
+      invalidateFinanceQueries(qc);
       qc.invalidateQueries({ queryKey: ["teacher", teacherId] });
       onGenerated?.();
     },

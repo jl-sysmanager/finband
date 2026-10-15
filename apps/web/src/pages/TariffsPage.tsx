@@ -98,7 +98,7 @@ export function TariffsPage() {
     );
   }, [rules.data, search]);
 
-  const pagination = usePagination(filteredRules, 12);
+  const pagination = usePagination(filteredRules, 12, search);
 
   useEffect(() => {
     pagination.setPage(1);

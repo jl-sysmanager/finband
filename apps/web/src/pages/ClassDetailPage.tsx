@@ -39,8 +39,8 @@ export function ClassDetailPage() {
   });
 
   const students = useQuery({
-    queryKey: ["students-all"],
-    queryFn: () => api<{ items: Array<{ id: string; firstName: string; lastName: string }> }>("/students?limit=500"),
+    queryKey: ["students", "options"],
+    queryFn: () => api<Array<{ id: string; firstName: string; lastName: string }>>("/students/options"),
   });
 
   const c = cls.data as {
@@ -260,7 +260,7 @@ export function ClassDetailPage() {
                   onChange={(e) => setStudentId(e.target.value)}
                 >
                   <option value="">Añadir alumno…</option>
-                  {students.data?.items.map((s) => (
+                  {students.data?.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.firstName} {s.lastName}
                     </option>

@@ -14,6 +14,8 @@ import { ApiError, api } from "@/lib/api";
 import { useAuth } from "@/stores/auth";
 import { useConfirm } from "@/hooks/useConfirm";
 import { FEE_STATUS_LABELS } from "@finband/shared";
+import { TeacherSelect } from "@/components/form/TeacherSelect";
+import { invalidateFinanceQueries } from "@/lib/query-invalidation";
 
 type Props = {
   studentId: string;
@@ -31,11 +33,6 @@ export function StudentQuickPanel({ studentId, onRemoved }: Props) {
   const student = useQuery({
     queryKey: ["student", studentId],
     queryFn: () => api<Record<string, unknown>>(`/students/${studentId}`),
-  });
-
-  const teachers = useQuery({
-    queryKey: ["teachers"],
-    queryFn: () => api<Array<{ id: string; firstName: string; lastName: string }>>("/teachers"),
   });
 
   const save = useMutation({
@@ -58,7 +55,7 @@ export function StudentQuickPanel({ studentId, onRemoved }: Props) {
 
   const deleteFee = useMutation({
     mutationFn: (feeId: string) => api(`/payments/student-fees/${feeId}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["student", studentId] }),
+    onSuccess: () => invalidateFinanceQueries(qc),
   });
 
   const s = student.data as {
@@ -158,7 +155,7 @@ export function StudentQuickPanel({ studentId, onRemoved }: Props) {
               Económico
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="personal" className="mt-3 space-y-3">
+          <TabsContent value="personal" keepMounted className="mt-3 space-y-3">
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Nombre" name="firstName" defaultValue={fieldDefault("firstName")} disabled={!isAdmin} />
               <Field label="Apellidos" name="lastName" defaultValue={fieldDefault("lastName")} disabled={!isAdmin} />
@@ -176,25 +173,17 @@ export function StudentQuickPanel({ studentId, onRemoved }: Props) {
               </div>
             </div>
           </TabsContent>
-          <TabsContent value="academico" className="mt-3 space-y-3">
+          <TabsContent value="academico" keepMounted className="mt-3 space-y-3">
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Instrumento" name="mainInstrument" defaultValue={fieldDefault("mainInstrument")} disabled={!isAdmin} />
               <Field label="Nivel" name="level" defaultValue={fieldDefault("level")} disabled={!isAdmin} />
               <div className="sm:col-span-2 space-y-1">
                 <Label>Profesor</Label>
-                <select
+                <TeacherSelect
                   name="primaryTeacherId"
-                  defaultValue={s.primaryTeacherId ?? ""}
+                  defaultValue={s.primaryTeacherId}
                   disabled={!isAdmin}
-                  className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm"
-                >
-                  <option value="">—</option>
-                  {teachers.data?.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.firstName} {t.lastName}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
               <div className="sm:col-span-2">
                 <p className="mb-1 text-xs font-medium text-muted-foreground">Clases</p>
@@ -225,7 +214,7 @@ export function StudentQuickPanel({ studentId, onRemoved }: Props) {
               </div>
             </div>
           </TabsContent>
-          <TabsContent value="economico" className="mt-3 space-y-3">
+          <TabsContent value="economico" keepMounted className="mt-3 space-y-3">
             <Field
               label="Cuota fija (opc.)"
               name="monthlyFee"

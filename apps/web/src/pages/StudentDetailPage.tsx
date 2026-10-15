@@ -19,6 +19,8 @@ import { FeeReminderDialog } from "@/components/fees/FeeReminderDialog";
 import { StudentEconomicHistory } from "@/components/students/StudentEconomicHistory";
 import { useState } from "react";
 import { useConfirm } from "@/hooks/useConfirm";
+import { TeacherSelect } from "@/components/form/TeacherSelect";
+import { invalidateFinanceQueries } from "@/lib/query-invalidation";
 
 export function StudentDetailPage() {
   const { id } = useParams();
@@ -36,11 +38,6 @@ export function StudentDetailPage() {
     queryKey: ["student", id],
     queryFn: () => api<Record<string, unknown>>(`/students/${id}`),
     enabled: !isNew && !!id,
-  });
-
-  const teachers = useQuery({
-    queryKey: ["teachers"],
-    queryFn: () => api<Array<{ id: string; firstName: string; lastName: string }>>("/teachers"),
   });
 
   const save = useMutation({
@@ -66,7 +63,7 @@ export function StudentDetailPage() {
   const deleteFee = useMutation({
     mutationFn: (feeId: string) => api(`/payments/student-fees/${feeId}`, { method: "DELETE" }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["student", id] });
+      invalidateFinanceQueries(qc);
       setDeleteError(null);
     },
   });
@@ -134,7 +131,8 @@ export function StudentDetailPage() {
       if (k === "monthlyFee") body[k] = v ? Number(v) : null;
       else body[k] = v || null;
     });
-    if (!body.status) body.status = "ACTIVE";
+    // La ficha no edita el estado: solo se fija al crear (antes reactivaba a los inactivos).
+    if (isNew) body.status = "ACTIVE";
     try {
       await save.mutateAsync(body);
     } catch (err) {
@@ -219,7 +217,7 @@ export function StudentDetailPage() {
             <TabsTrigger value="academico">Académico</TabsTrigger>
             <TabsTrigger value="economico">Económico</TabsTrigger>
           </TabsList>
-          <TabsContent value="personal">
+          <TabsContent value="personal" keepMounted>
             <Card>
               <CardHeader>
                 <CardTitle>Datos personales</CardTitle>
@@ -239,7 +237,7 @@ export function StudentDetailPage() {
               </CardContent>
             </Card>
           </TabsContent>
-          <TabsContent value="academico">
+          <TabsContent value="academico" keepMounted>
             <Card>
               <CardHeader>
                 <CardTitle>Académico</CardTitle>
@@ -249,19 +247,11 @@ export function StudentDetailPage() {
                 {field("level", "Nivel")}
                 <div className="space-y-1">
                   <Label>Profesor asignado</Label>
-                  <select
+                  <TeacherSelect
                     name="primaryTeacherId"
-                    defaultValue={s?.primaryTeacherId ?? ""}
+                    defaultValue={s?.primaryTeacherId}
                     disabled={!isAdmin}
-                    className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm"
-                  >
-                    <option value="">—</option>
-                    {teachers.data?.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.firstName} {t.lastName}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
                 {!isNew ? (
                   <div className="md:col-span-2">
@@ -279,7 +269,7 @@ export function StudentDetailPage() {
               </CardContent>
             </Card>
           </TabsContent>
-          <TabsContent value="economico">
+          <TabsContent value="economico" keepMounted>
             <Card>
               <CardHeader>
                 <CardTitle>Económico</CardTitle>

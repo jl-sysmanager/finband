@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ApiError, api } from "@/lib/api";
+import { invalidateFinanceQueries } from "@/lib/query-invalidation";
 import { currentYearMonth, formatMoney } from "@/lib/utils";
 import { toast } from "@/stores/toast";
 import { Link } from "react-router-dom";
@@ -53,8 +54,7 @@ export function MonthCloseWizard({ open, onOpenChange }: Props) {
         ? ` · ${data.skippedWithPayments} con pagos sin recalcular`
         : "";
       toast(`Liquidaciones: ${data.generated} generada(s)${kept}`, "success");
-      qc.invalidateQueries({ queryKey: ["dashboard-action-items"] });
-      qc.invalidateQueries({ queryKey: ["teacher-payouts"] });
+      invalidateFinanceQueries(qc);
     },
     onError: (err) =>
       toast(err instanceof ApiError ? err.message : "Error al generar liquidaciones", "error"),

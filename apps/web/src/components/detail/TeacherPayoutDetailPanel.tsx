@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { FileText, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { feeStatusBadge } from "@/components/ui/badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
   DataTableTh,
 } from "@/components/list/DataTable";
 import { ApiError, api, downloadUrl } from "@/lib/api";
+import { invalidateFinanceQueries } from "@/lib/query-invalidation";
 import { formatDate, formatMoney, roundMoney } from "@/lib/utils";
 import { toast } from "@/stores/toast";
 import { useAuth } from "@/stores/auth";
@@ -51,6 +52,9 @@ export function TeacherPayoutDetailPanel({ payout, onClose, onDeleted }: Props) 
   const { confirm, dialog: confirmDialog } = useConfirm();
   const pending = roundMoney(payout.amount - payout.amountPaid);
   const [payAmount, setPayAmount] = useState(pending > 0 ? String(pending) : "");
+  useEffect(() => {
+    setPayAmount(pending > 0 ? String(pending) : "");
+  }, [pending]);
   const payments = payout.payments ?? [];
 
   const payPayout = useMutation({
@@ -59,7 +63,7 @@ export function TeacherPayoutDetailPanel({ payout, onClose, onDeleted }: Props) 
         method: "POST",
         body: JSON.stringify({ payoutId: payout.id, amount: roundMoney(amount) }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["teacher-payouts"] }),
+    onSuccess: () => invalidateFinanceQueries(qc),
     onError: (err) =>
       toast(err instanceof ApiError ? err.message : "No se pudo registrar el pago", "error"),
   });
@@ -67,7 +71,7 @@ export function TeacherPayoutDetailPanel({ payout, onClose, onDeleted }: Props) 
   const deletePayment = useMutation({
     mutationFn: (paymentId: string) =>
       api(`/payments/teacher-payout-payments/${paymentId}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["teacher-payouts"] }),
+    onSuccess: () => invalidateFinanceQueries(qc),
     onError: (err) =>
       toast(err instanceof ApiError ? err.message : "No se pudo anular el pago", "error"),
   });
@@ -78,13 +82,13 @@ export function TeacherPayoutDetailPanel({ payout, onClose, onDeleted }: Props) 
         method: "PATCH",
         body: JSON.stringify({ amountPaid: 0 }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["teacher-payouts"] }),
+    onSuccess: () => invalidateFinanceQueries(qc),
   });
 
   const deletePayout = useMutation({
     mutationFn: () => api(`/payments/teacher-payouts/${payout.id}`, { method: "DELETE" }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["teacher-payouts"] });
+      invalidateFinanceQueries(qc);
       onDeleted?.();
       onClose?.();
     },

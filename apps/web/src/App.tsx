@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -19,8 +19,8 @@ import { TeachersPage } from "@/pages/TeachersPage";
 import { useAuth } from "@/stores/auth";
 import { useTheme } from "@/stores/theme";
 import { Toaster } from "@/components/feedback/Toaster";
+import { queryClient } from "@/lib/query-client";
 
-const queryClient = new QueryClient();
 
 function AuthBootstrap({ children }: { children: React.ReactNode }) {
   const fetchMe = useAuth((s) => s.fetchMe);

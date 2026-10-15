@@ -38,6 +38,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ApiError, api, downloadUrl } from "@/lib/api";
+import { invalidateFinanceQueries } from "@/lib/query-invalidation";
 import { buildQuery, currentYearMonth, formatDate, formatMoney, roundMoney } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 
@@ -159,7 +160,7 @@ export function PaymentsPage() {
         }),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["student-fees"] });
+      invalidateFinanceQueries(qc);
       setPayAmount("");
     },
   });
@@ -167,7 +168,7 @@ export function PaymentsPage() {
   const deletePayment = useMutation({
     mutationFn: (id: string) => api(`/payments/student-payments/${id}`, { method: "DELETE" }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["student-fees"] });
+      invalidateFinanceQueries(qc);
       setDeleteError(null);
     },
   });
@@ -178,7 +179,7 @@ export function PaymentsPage() {
         method: "POST",
         body: JSON.stringify({ yearMonth: monthTo }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["teacher-payouts"] }),
+    onSuccess: () => invalidateFinanceQueries(qc),
   });
 
   function selectFee(f: StudentFee) {
@@ -188,8 +189,8 @@ export function PaymentsPage() {
   }
 
   const feeRows = fees.data ?? [];
-  const feePagination = usePagination(feeRows, 10);
-  const payoutPagination = usePagination(payouts.data ?? [], 10);
+  const feePagination = usePagination(feeRows, 10, feeQuery);
+  const payoutPagination = usePagination(payouts.data ?? [], 10, payoutQuery);
 
   const pendingFeeOptions = useMemo(
     () =>
@@ -292,7 +293,7 @@ export function PaymentsPage() {
       >
         {sheetFee ? (
           <StudentFeeDetailPanel
-            key={`${sheetFee.id}-${sheetFee.amountPaid}-${sheetFee.payments.length}`}
+            key={sheetFee.id}
             fee={sheetFee}
             onClose={() => setSelectedFeeId(null)}
             onDeleted={() => setSelectedFeeId(null)}
@@ -312,7 +313,7 @@ export function PaymentsPage() {
       >
         {sheetPayout ? (
           <TeacherPayoutDetailPanel
-            key={`${sheetPayout.id}-${sheetPayout.amountPaid}`}
+            key={sheetPayout.id}
             payout={sheetPayout}
             onClose={() => setSelectedPayoutId(null)}
             onDeleted={() => setSelectedPayoutId(null)}

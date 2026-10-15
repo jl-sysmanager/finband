@@ -53,7 +53,7 @@ export function TeachersPage() {
     );
   }, [q.data, search]);
 
-  const pagination = usePagination(filtered, 12);
+  const pagination = usePagination(filtered, 12, search);
   const selectedRow = filtered.find((t) => t.id === selectedId);
 
   return (
