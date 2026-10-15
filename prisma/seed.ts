@@ -7,6 +7,7 @@ import {
   UserRole,
 } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { randomBytes } from "node:crypto";
 
 const prisma = new PrismaClient();
 
@@ -18,30 +19,39 @@ function monthStart(d = new Date()) {
   return new Date(d.getFullYear(), d.getMonth(), 1);
 }
 
+/** En producción nunca se usa una contraseña conocida: si no se define, se genera una. */
+function resolveAdminPassword(): { password: string; generated: boolean } {
+  const fromEnv = process.env.ADMIN_PASSWORD?.trim();
+  if (fromEnv) {
+    if (process.env.NODE_ENV === "production" && fromEnv === "admin123") {
+      console.warn("AVISO: ADMIN_PASSWORD usa el valor de ejemplo; cámbielo cuanto antes.");
+    }
+    return { password: fromEnv, generated: false };
+  }
+  if (process.env.NODE_ENV !== "production") return { password: "admin123", generated: false };
+  return { password: randomBytes(12).toString("base64url"), generated: true };
+}
+
 async function seedBase() {
-  const adminUser = process.env.ADMIN_USERNAME ?? "admin";
-  const adminPass = process.env.ADMIN_PASSWORD ?? "admin123";
-  const hash = await bcrypt.hash(adminPass, 10);
-
-  await prisma.user.upsert({
-    where: { username: adminUser },
-    update: {},
-    create: {
-      username: adminUser,
-      passwordHash: hash,
-      role: UserRole.ADMIN,
-    },
-  });
-
-  await prisma.user.upsert({
-    where: { username: "consulta" },
-    update: {},
-    create: {
-      username: "consulta",
-      passwordHash: await bcrypt.hash("consulta123", 10),
-      role: UserRole.READONLY,
-    },
-  });
+  const adminUser = process.env.ADMIN_USERNAME?.trim() || "admin";
+  const adminExists = await prisma.user.findUnique({ where: { username: adminUser } });
+  if (!adminExists) {
+    const { password, generated } = resolveAdminPassword();
+    await prisma.user.create({
+      data: {
+        username: adminUser,
+        passwordHash: await bcrypt.hash(password, 10),
+        role: UserRole.ADMIN,
+      },
+    });
+    if (generated) {
+      console.log("==============================================================");
+      console.log(`Usuario administrador creado: ${adminUser}`);
+      console.log(`Contraseña generada: ${password}`);
+      console.log("Guárdela y cámbiela desde Ajustes > Usuarios.");
+      console.log("==============================================================");
+    }
+  }
 
   const year = await prisma.academicYear.upsert({
     where: { id: "default-year" },
@@ -108,6 +118,17 @@ async function seedBase() {
 
 async function seedMock() {
   if (process.env.SEED_MOCK === "false") return;
+
+  // Usuario de demostración con contraseña conocida: solo junto a los datos mock.
+  await prisma.user.upsert({
+    where: { username: "consulta" },
+    update: {},
+    create: {
+      username: "consulta",
+      passwordHash: await bcrypt.hash("consulta123", 10),
+      role: UserRole.READONLY,
+    },
+  });
 
   const existing = await prisma.student.count({ where: { id: { startsWith: "mock-" } } });
   const skipEntities = existing > 0;

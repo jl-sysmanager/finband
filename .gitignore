@@ -6,3 +6,5 @@ prisma/data/
 .env
 .env.local
 .DS_Store
+data/.jwt-secret
+data/*.bak

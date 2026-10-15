@@ -1,6 +1,7 @@
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
+import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import path from "node:path";
@@ -10,6 +11,7 @@ import {
   blockReadonlyWrites,
   requireAdmin,
 } from "./lib/auth-plugin.js";
+import { config } from "./lib/config.js";
 import { authRoutes, publicAuthRoutes } from "./routes/auth.js";
 import { classRoutes } from "./routes/classes.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
@@ -37,8 +39,11 @@ await app.register(cors, {
 
 await app.register(cookie);
 await app.register(jwt, {
-  secret: process.env.JWT_SECRET ?? "dev-secret-change-me",
+  secret: config.jwtSecret,
+  sign: { expiresIn: config.sessionMaxAgeSeconds },
 });
+// Solo se aplica a las rutas que lo activan con `config.rateLimit` (login).
+await app.register(rateLimit, { global: false });
 
 app.get("/api/health", async () => ({ ok: true }));
 

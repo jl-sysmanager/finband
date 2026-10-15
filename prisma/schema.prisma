@@ -54,6 +54,8 @@ model User {
   username     String   @unique
   passwordHash String
   role         UserRole @default(ADMIN)
+  /// Se incrementa al cambiar la contraseña para invalidar las sesiones abiertas.
+  sessionVersion Int    @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }

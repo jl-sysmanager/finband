@@ -10,16 +10,24 @@ docker compose up -d --build
 
 Abrir [http://localhost:8080](http://localhost:8080)
 
-**Credenciales por defecto**
+**Primer arranque**
 
-| Usuario   | Contraseña   | Perfil        |
-|-----------|--------------|---------------|
-| admin     | admin123     | Administrador |
-| consulta  | consulta123  | Solo lectura  |
+- Si no se define `ADMIN_PASSWORD`, se crea el usuario `admin` con una **contraseña aleatoria** que se muestra una sola vez en los logs (`docker compose logs finband`). Cámbiela desde *Ajustes › Usuarios*.
+- Si no se define `JWT_SECRET`, se genera uno y se guarda en `./data/.jwt-secret`.
+- Los datos de demostración (y el usuario `consulta`/`consulta123`, solo lectura) se cargan únicamente con `SEED_MOCK=true`.
 
-Variables opcionales en `.env` o entorno: `JWT_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`.
+Variables opcionales en `.env` o entorno:
 
-La base SQLite se guarda en `./data/finband.db` (hacer copia de seguridad de la carpeta `data/`).
+| Variable | Uso |
+|---|---|
+| `JWT_SECRET` | Secreto de sesión (mín. 32 caracteres en producción; `openssl rand -hex 32`). |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Administrador inicial (solo se usa al crear la base). |
+| `SEED_MOCK` | `true` para cargar datos de demostración en una base nueva. |
+| `COOKIE_SECURE` | `true` si la aplicación se sirve detrás de HTTPS. |
+
+Las sesiones duran 12 horas y se cierran al cambiar la contraseña del usuario. El acceso se bloquea 15 minutos tras 10 intentos desde la misma IP.
+
+La base SQLite se guarda en `./data/finband.db` (hacer copia de seguridad de la carpeta `data/`). Desde *Ajustes* se puede descargar y restaurar una copia; al restaurar se guarda la base anterior como `finband.db.pre-restore-*.bak` y se aplican las migraciones pendientes.
 
 ## Desarrollo local
 
@@ -32,7 +40,7 @@ npm run db:seed
 npm run dev
 ```
 
-El seed incluye **datos mock** (alumnos, profesores, clases, cuotas, ingresos/gastos) para probar el dashboard. Para omitirlos: `SEED_MOCK=false npm run db:seed`.
+En desarrollo el administrador es `admin`/`admin123` salvo que se defina `ADMIN_PASSWORD`. El seed incluye **datos mock** (alumnos, profesores, clases, cuotas, ingresos/gastos) para probar el dashboard. Para omitirlos: `SEED_MOCK=false npm run db:seed`.
 
 - Frontend: [http://localhost:5173](http://localhost:5173)
 - API: [http://localhost:3000](http://localhost:3000)
