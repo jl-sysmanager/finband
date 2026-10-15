@@ -1,12 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { previewFeesForMonth } from "../lib/tariffs.js";
 import { prisma } from "../lib/prisma.js";
+import { calendarDateOf, monthDateRange, yearMonthOf } from "../lib/dates.js";
 
 function monthBounds(date = new Date()) {
-  const start = new Date(date.getFullYear(), date.getMonth(), 1);
-  const end = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59);
-  const ym = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-  return { start, end, ym };
+  const ym = yearMonthOf(date);
+  return { ...monthDateRange(ym), ym };
 }
 
 export async function dashboardRoutes(app: FastifyInstance) {
@@ -24,7 +23,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
     ] = await Promise.all([
       prisma.student.count({ where: { deletedAt: null, status: "ACTIVE" } }),
       prisma.teacher.count({ where: { deletedAt: null } }),
-      prisma.classGroup.count(),
+      prisma.classGroup.count({ where: { deletedAt: null } }),
       prisma.incomeEntry.aggregate({
         where: { date: { gte: start, lte: end } },
         _sum: { amount: true },
@@ -93,15 +92,15 @@ export async function dashboardRoutes(app: FastifyInstance) {
     const payoutsPaidByMonth = zeroed();
 
     for (const row of incomes) {
-      const key = `${row.date.getFullYear()}-${String(row.date.getMonth() + 1).padStart(2, "0")}`;
+      const key = calendarDateOf(row.date).slice(0, 7);
       if (monthSet.has(key)) incomeByMonth[key] = (incomeByMonth[key] ?? 0) + row.amount;
     }
     for (const row of expenses) {
-      const key = `${row.date.getFullYear()}-${String(row.date.getMonth() + 1).padStart(2, "0")}`;
+      const key = calendarDateOf(row.date).slice(0, 7);
       if (monthSet.has(key)) expenseByMonth[key] = (expenseByMonth[key] ?? 0) + row.amount;
     }
     for (const row of studentPayments) {
-      const key = `${row.paidAt.getFullYear()}-${String(row.paidAt.getMonth() + 1).padStart(2, "0")}`;
+      const key = yearMonthOf(row.paidAt);
       if (monthSet.has(key)) feesCollectedByMonth[key] = (feesCollectedByMonth[key] ?? 0) + row.amount;
     }
     for (const row of studentFees) {
@@ -199,9 +198,9 @@ export async function dashboardRoutes(app: FastifyInstance) {
           take: 10,
           select: { id: true, firstName: true, lastName: true },
         }),
-        prisma.classGroup.count({ where: { scheduleSlots: { none: {} } } }),
+        prisma.classGroup.count({ where: { deletedAt: null, scheduleSlots: { none: {} } } }),
         prisma.classGroup.findMany({
-          where: { scheduleSlots: { none: {} } },
+          where: { deletedAt: null, scheduleSlots: { none: {} } },
           include: { teacher: { select: { firstName: true, lastName: true } } },
           take: 10,
         }),

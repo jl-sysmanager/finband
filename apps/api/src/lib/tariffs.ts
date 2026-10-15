@@ -4,6 +4,7 @@ import { withLock } from "./locks.js";
 import { roundMoney, subtractMoney, sumMoney } from "./money.js";
 import { prisma } from "./prisma.js";
 import { monthBounds } from "./schedule-occurrences.js";
+import { calendarDateInMonth, calendarDateOf, yearMonthOf } from "./dates.js";
 
 export class FeeHasPaymentsError extends Error {
   constructor() {
@@ -11,14 +12,7 @@ export class FeeHasPaymentsError extends Error {
   }
 }
 
-export function currentYearMonth(date = new Date()) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
-
-/** Fecha guardada (medianoche UTC del día elegido) como "YYYY-MM-DD". */
-function isoDay(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
+export const currentYearMonth = yearMonthOf;
 
 /** Un descuento se aplica si su vigencia se solapa con el mes de la cuota. */
 function discountAppliesToMonth(
@@ -26,8 +20,8 @@ function discountAppliesToMonth(
   yearMonth: string,
 ) {
   const { from, to } = monthBounds(yearMonth);
-  if (d.validFrom && isoDay(d.validFrom) > to) return false;
-  if (d.validTo && isoDay(d.validTo) < from) return false;
+  if (d.validFrom && calendarDateOf(d.validFrom) > to) return false;
+  if (d.validTo && calendarDateOf(d.validTo) < from) return false;
   return true;
 }
 
@@ -90,7 +84,7 @@ export async function calculateStudentMonthlyFee(
     where: { id: studentId, deletedAt: null },
     include: {
       enrollments: {
-        where: { active: true },
+        where: { active: true, classGroup: { deletedAt: null } },
         include: { classGroup: true },
       },
       discounts: { where: { active: true } },
@@ -136,8 +130,8 @@ async function upsertStudentFeeForMonth(
   yearMonth: string,
   calc: Awaited<ReturnType<typeof calculateStudentMonthlyFee>>,
 ) {
-  const [y, m] = yearMonth.split("-").map(Number);
-  const dueDate = new Date(y!, m!, 5);
+  // Vence el día 5 del propio mes de la cuota.
+  const dueDate = calendarDateInMonth(yearMonth, 5);
   const fields = {
     baseAmount: calc.baseAmount,
     discountAmount: calc.discountAmount,

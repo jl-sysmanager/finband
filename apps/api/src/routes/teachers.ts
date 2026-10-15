@@ -17,7 +17,7 @@ export async function teacherRoutes(app: FastifyInstance) {
     return prisma.teacher.findMany({
       where,
       include: {
-        classGroups: true,
+        classGroups: { where: { deletedAt: null } },
         _count: { select: { primaryStudents: true } },
       },
       orderBy: { lastName: "asc" },
@@ -29,7 +29,10 @@ export async function teacherRoutes(app: FastifyInstance) {
     const teacher = await prisma.teacher.findFirst({
       where: { id, deletedAt: null },
       include: {
-        classGroups: { include: { enrollments: { where: { active: true } } } },
+        classGroups: {
+          where: { deletedAt: null },
+          include: { enrollments: { where: { active: true } } },
+        },
         payouts: { orderBy: { yearMonth: "desc" } },
         primaryStudents: { where: { deletedAt: null } },
       },

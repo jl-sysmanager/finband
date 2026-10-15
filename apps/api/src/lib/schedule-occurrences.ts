@@ -120,6 +120,8 @@ export function scheduleTotalsInRange(
   classGroups: Array<{
     durationMinutes: number;
     scheduleSlots: Array<{ id: string; dayOfWeek: number; startTime: string; endTime: string }>;
+    /** Último día (incluido, "YYYY-MM-DD") en que se impartió una clase ya borrada. */
+    activeUntil?: string | null;
   }>,
   cancelledKeys: Set<string>,
 ) {
@@ -131,6 +133,7 @@ export function scheduleTotalsInRange(
   while (cursor <= to) {
     const dow = isoDayOfWeek(cursor);
     for (const group of classGroups) {
+      if (group.activeUntil && cursor > group.activeUntil) continue;
       for (const slot of group.scheduleSlots) {
         if (slot.dayOfWeek !== dow) continue;
         if (cancelledKeys.has(cancellationKey(slot.id, cursor))) continue;

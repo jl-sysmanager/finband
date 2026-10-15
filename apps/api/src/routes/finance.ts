@@ -2,17 +2,15 @@ import type { FastifyInstance } from "fastify";
 import { expenseEntrySchema, incomeEntrySchema } from "@finband/shared";
 import { recordAudit } from "../lib/audit.js";
 import { prisma } from "../lib/prisma.js";
+import { calendarRangeFilter, parseCalendarDate } from "../lib/dates.js";
 
 export async function financeRoutes(app: FastifyInstance) {
   app.get("/incomes", async (request) => {
     const q = request.query as Record<string, string | undefined>;
     const where: Record<string, unknown> = {};
     if (q.categoryId) where.categoryId = q.categoryId;
-    if (q.from || q.to) {
-      where.date = {};
-      if (q.from) (where.date as Record<string, Date>).gte = new Date(q.from);
-      if (q.to) (where.date as Record<string, Date>).lte = new Date(q.to);
-    }
+    const dateRange = calendarRangeFilter(q.from, q.to);
+    if (dateRange) where.date = dateRange;
     return prisma.incomeEntry.findMany({
       where,
       include: { category: true },
@@ -28,7 +26,7 @@ export async function financeRoutes(app: FastifyInstance) {
     const d = parsed.data;
     return prisma.incomeEntry.create({
       data: {
-        date: new Date(d.date),
+        date: parseCalendarDate(d.date),
         concept: d.concept,
         categoryId: d.categoryId,
         amount: d.amount,
@@ -49,7 +47,7 @@ export async function financeRoutes(app: FastifyInstance) {
       where: { id },
       data: {
         ...d,
-        date: d.date ? new Date(d.date) : undefined,
+        date: d.date ? parseCalendarDate(d.date) : undefined,
       },
     });
   });
@@ -65,11 +63,8 @@ export async function financeRoutes(app: FastifyInstance) {
     const q = request.query as Record<string, string | undefined>;
     const where: Record<string, unknown> = {};
     if (q.categoryId) where.categoryId = q.categoryId;
-    if (q.from || q.to) {
-      where.date = {};
-      if (q.from) (where.date as Record<string, Date>).gte = new Date(q.from);
-      if (q.to) (where.date as Record<string, Date>).lte = new Date(q.to);
-    }
+    const dateRange = calendarRangeFilter(q.from, q.to);
+    if (dateRange) where.date = dateRange;
     return prisma.expenseEntry.findMany({
       where,
       include: { category: true },
@@ -85,7 +80,7 @@ export async function financeRoutes(app: FastifyInstance) {
     const d = parsed.data;
     return prisma.expenseEntry.create({
       data: {
-        date: new Date(d.date),
+        date: parseCalendarDate(d.date),
         concept: d.concept,
         categoryId: d.categoryId,
         amount: d.amount,
@@ -105,7 +100,7 @@ export async function financeRoutes(app: FastifyInstance) {
       where: { id },
       data: {
         ...d,
-        date: d.date ? new Date(d.date) : undefined,
+        date: d.date ? parseCalendarDate(d.date) : undefined,
       },
     });
   });

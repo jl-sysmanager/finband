@@ -118,7 +118,7 @@ export function ClassQuickPanel({ classId, onRemoved }: Props) {
   async function deleteClass() {
     const ok = await confirm({
       title: "Eliminar clase",
-      description: `¿Eliminar «${c.name}»?`,
+      description: `¿Eliminar «${c.name}»? Se darán de baja sus matrículas; las liquidaciones ya trabajadas no cambian.`,
       confirmLabel: "Eliminar",
       destructive: true,
     });

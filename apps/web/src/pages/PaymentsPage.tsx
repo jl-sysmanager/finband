@@ -3,7 +3,7 @@ import { FEE_STATUS_LABELS, PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from "@finb
 import { FileText, Layers, Trash2 } from "lucide-react";
 import { EntityDetailSheet } from "@/components/layout/EntityDetailSheet";
 import { StudentFeeDetailPanel } from "@/components/detail/StudentFeeDetailPanel";
-import { TeacherPayoutDetailPanel } from "@/components/detail/TeacherPayoutDetailPanel";
+import { TeacherPayoutDetailPanel, type PayoutRow } from "@/components/detail/TeacherPayoutDetailPanel";
 import { BulkFeeGenerateDialog } from "@/components/fees/BulkFeeGenerateDialog";
 import { useMemo, useState } from "react";
 import { CollapsibleSection } from "@/components/list/CollapsibleSection";
@@ -56,19 +56,6 @@ type StudentFee = {
   status: keyof typeof FEE_STATUS_LABELS;
   student: { firstName: string; lastName: string };
   payments: StudentPayment[];
-};
-
-type PayoutRow = {
-  id: string;
-  yearMonth: string;
-  amount: number;
-  baseAmount: number;
-  transportAmount: number;
-  workDays: number;
-  amountPaid: number;
-  status: string;
-  paidAt?: string | null;
-  teacher: { firstName: string; lastName: string };
 };
 
 const PAYOUT_STATUS_LABELS: Record<string, string> = {

@@ -17,18 +17,10 @@ import {
   reportStudentsWithoutFee,
 } from "../lib/phase-a-reports.js";
 import { receiptRoutes } from "./receipts.js";
+import { monthDateRange, yearMonthOf } from "../lib/dates.js";
 
-function defaultYearMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function monthRange(yearMonth: string) {
-  const [y, m] = yearMonth.split("-").map(Number);
-  const start = new Date(y!, m! - 1, 1);
-  const end = new Date(y!, m!, 0, 23, 59, 59);
-  return { start, end };
-}
+const defaultYearMonth = () => yearMonthOf();
+const monthRange = monthDateRange;
 
 async function monthlyBalance(yearMonth: string) {
   const { start, end } = monthRange(yearMonth);
@@ -94,9 +86,7 @@ export async function reportRoutes(app: FastifyInstance) {
   await app.register(receiptRoutes, { prefix: "/receipts" });
   app.get("/balance-monthly", async (request: FastifyRequest, reply: FastifyReply) => {
     const q = request.query as { yearMonth?: string; format?: string; inline?: string };
-    const yearMonth =
-      q.yearMonth ??
-      `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+    const yearMonth = q.yearMonth ?? defaultYearMonth();
     const data = await monthlyBalance(yearMonth);
 
     if (q.format === "xlsx") {

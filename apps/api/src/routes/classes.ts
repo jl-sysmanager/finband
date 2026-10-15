@@ -18,6 +18,7 @@ import {
 } from "../lib/schedule.js";
 import { recordAudit } from "../lib/audit.js";
 import { prisma } from "../lib/prisma.js";
+import { parseCalendarDate } from "../lib/dates.js";
 
 function stripSlots(data: Record<string, unknown>) {
   const { scheduleSlots: _s, ...rest } = data;
@@ -41,6 +42,7 @@ export async function classRoutes(app: FastifyInstance) {
     }
 
     const slots = await prisma.classScheduleSlot.findMany({
+      where: { classGroup: { deletedAt: null } },
       include: {
         classGroup: { include: { teacher: true } },
       },
@@ -130,6 +132,7 @@ export async function classRoutes(app: FastifyInstance) {
 
   app.get("/schedule/weekly", async () => {
     const groups = await prisma.classGroup.findMany({
+      where: { deletedAt: null },
       include: {
         teacher: true,
         scheduleSlots: { orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }] },
@@ -152,7 +155,7 @@ export async function classRoutes(app: FastifyInstance) {
 
   app.get("/", async (request) => {
     const q = request.query as Record<string, string | undefined>;
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { deletedAt: null };
     if (q.type) where.type = q.type;
     if (q.teacherId) where.teacherId = q.teacherId;
     if (q.search) where.name = { contains: q.search };
@@ -168,8 +171,8 @@ export async function classRoutes(app: FastifyInstance) {
 
   app.get("/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const group = await prisma.classGroup.findUnique({
-      where: { id },
+    const group = await prisma.classGroup.findFirst({
+      where: { id, deletedAt: null },
       include: {
         ...classIncludeSchedule,
         enrollments: {
@@ -210,7 +213,10 @@ export async function classRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
     const { scheduleSlots, ...data } = parsed.data;
-    const exists = await prisma.classGroup.findUnique({ where: { id }, select: { id: true } });
+    const exists = await prisma.classGroup.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true },
+    });
     if (!exists) return reply.status(404).send({ error: "Clase no encontrada" });
     return prisma.$transaction(async (tx) => {
       await tx.classGroup.update({ where: { id }, data: stripSlots(data) });
@@ -222,15 +228,24 @@ export async function classRoutes(app: FastifyInstance) {
     });
   });
 
-  app.delete("/:id", async (request) => {
+  // Borrado lógico: conserva horario, suspensiones y asistencia para que las
+  // liquidaciones de meses ya trabajados no cambien.
+  app.delete("/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const existing = await prisma.classGroup.findUnique({ where: { id } });
-    await prisma.classGroup.delete({ where: { id } });
+    const existing = await prisma.classGroup.findFirst({ where: { id, deletedAt: null } });
+    if (!existing) return reply.status(404).send({ error: "Clase no encontrada" });
+    const { count: enrollmentsClosed } = await prisma.$transaction(async (tx) => {
+      await tx.classGroup.update({ where: { id }, data: { deletedAt: new Date() } });
+      return tx.enrollment.updateMany({
+        where: { classGroupId: id, active: true },
+        data: { active: false },
+      });
+    });
     await recordAudit(request, {
-      action: "DELETE",
+      action: "SOFT_DELETE",
       entityType: "class_group",
       entityId: id,
-      details: existing ? { name: existing.name } : null,
+      details: { name: existing.name, enrollmentsClosed },
     });
     return { ok: true };
   });
@@ -241,8 +256,8 @@ export async function classRoutes(app: FastifyInstance) {
     if (!studentId) {
       return reply.status(400).send({ error: "studentId requerido" });
     }
-    const group = await prisma.classGroup.findUnique({
-      where: { id },
+    const group = await prisma.classGroup.findFirst({
+      where: { id, deletedAt: null },
       include: { _count: { select: { enrollments: { where: { active: true } } } } },
     });
     if (!group) return reply.status(404).send({ error: "Clase no encontrada" });
@@ -277,7 +292,7 @@ export async function classRoutes(app: FastifyInstance) {
     const session = await prisma.attendanceSession.create({
       data: {
         classGroupId: id,
-        sessionDate: new Date(parsed.data.sessionDate),
+        sessionDate: parseCalendarDate(parsed.data.sessionDate),
         notes: parsed.data.notes,
         records: {
           create: enrollments.map((e) => ({

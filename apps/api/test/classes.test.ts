@@ -53,3 +53,35 @@ it("editar el horario conserva las suspensiones de las franjas que no cambian", 
 it("editar una clase inexistente devuelve 404", async () => {
   expect((await client.request("PATCH", "/classes/nope", { name: "X" })).status).toBe(404);
 });
+
+it("borrar una clase la oculta, cierra matrículas y conserva lo trabajado en las liquidaciones", async () => {
+  const teacher = await createTeacher({ costPerClass: 25 });
+  const created = await client.request("POST", "/classes", {
+    ...base,
+    name: "Guitarra",
+    teacherId: teacher.id,
+    scheduleSlots: [{ dayOfWeek: 1, startTime: "17:00", endTime: "18:00" }],
+  });
+  const classId = created.body.id;
+  const student = await prisma.student.create({ data: { firstName: "Ana", lastName: "Ruiz" } });
+  await client.request("POST", `/classes/${classId}/enrollments`, { studentId: student.id });
+  await prisma.tariffRule.create({ data: { name: "Individual", classType: "INDIVIDUAL", amount: 50 } });
+  expect((await client.request("GET", `/students/${student.id}/fee-preview?yearMonth=2026-10`)).body.totalAmount).toBe(50);
+
+  expect((await client.request("DELETE", `/classes/${classId}`)).status).toBe(200);
+  // Simula que se borró el miércoles 14 de octubre: se impartieron los lunes 5 y 12.
+  await prisma.classGroup.update({ where: { id: classId }, data: { deletedAt: new Date(2026, 9, 14, 10) } });
+
+  const list = await client.request("GET", "/classes");
+  expect(list.body.map((c: { id: string }) => c.id)).not.toContain(classId);
+  expect((await client.request("GET", `/classes/${classId}`)).status).toBe(404);
+  expect((await client.request("DELETE", `/classes/${classId}`)).status).toBe(404);
+  expect(await prisma.enrollment.count({ where: { classGroupId: classId, active: true } })).toBe(0);
+  expect((await client.request("GET", `/students/${student.id}/fee-preview?yearMonth=2026-11`)).body.totalAmount).toBe(0);
+
+  const calc = (ym: string) =>
+    client.request("GET", `/payments/teacher-payouts/calculate?teacherId=${teacher.id}&yearMonth=${ym}`);
+  expect((await calc("2026-10")).body).toMatchObject({ sessionCount: 2, baseAmount: 50 });
+  expect((await calc("2026-11")).body).toMatchObject({ sessionCount: 0, baseAmount: 0 });
+  expect(await prisma.classScheduleSlot.count({ where: { classGroupId: classId } })).toBe(1);
+});

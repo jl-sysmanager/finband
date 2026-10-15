@@ -7,6 +7,7 @@ import {
 } from "../lib/tariffs.js";
 import { recordAudit } from "../lib/audit.js";
 import { prisma } from "../lib/prisma.js";
+import { parseCalendarDate } from "../lib/dates.js";
 
 export async function studentRoutes(app: FastifyInstance) {
   app.get("/", async (request) => {
@@ -30,7 +31,10 @@ export async function studentRoutes(app: FastifyInstance) {
         where,
         include: {
           primaryTeacher: true,
-          enrollments: { where: { active: true }, include: { classGroup: true } },
+          enrollments: {
+            where: { active: true, classGroup: { deletedAt: null } },
+            include: { classGroup: true },
+          },
         },
         orderBy: { lastName: "asc" },
         skip: (page - 1) * limit,
@@ -65,7 +69,7 @@ export async function studentRoutes(app: FastifyInstance) {
     return prisma.student.create({
       data: {
         ...d,
-        birthDate: d.birthDate ? new Date(d.birthDate) : null,
+        birthDate: d.birthDate ? parseCalendarDate(d.birthDate) : null,
         email: d.email || null,
       },
     });
@@ -84,7 +88,7 @@ export async function studentRoutes(app: FastifyInstance) {
       where: { id },
       data: {
         ...d,
-        birthDate: d.birthDate === undefined ? undefined : d.birthDate ? new Date(d.birthDate) : null,
+        birthDate: d.birthDate === undefined ? undefined : d.birthDate ? parseCalendarDate(d.birthDate) : null,
         email: d.email === undefined ? undefined : d.email || null,
       },
     });
@@ -118,8 +122,8 @@ export async function studentRoutes(app: FastifyInstance) {
       data: {
         studentId: id,
         ...d,
-        validFrom: d.validFrom ? new Date(d.validFrom) : null,
-        validTo: d.validTo ? new Date(d.validTo) : null,
+        validFrom: d.validFrom ? parseCalendarDate(d.validFrom) : null,
+        validTo: d.validTo ? parseCalendarDate(d.validTo) : null,
       },
     });
   });

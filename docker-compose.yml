@@ -9,6 +9,7 @@ services:
       ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"  # vacío = se genera y se muestra en los logs
       NODE_ENV: production
+      APP_TZ: "${APP_TZ:-Europe/Madrid}"  # zona horaria de la escuela
       SERVE_WEB: "true"
       SEED_MOCK: "${SEED_MOCK:-false}"
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"  # true si se sirve detrás de HTTPS

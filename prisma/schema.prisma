@@ -151,6 +151,9 @@ model ClassGroup {
   durationMinutes Int                @default(60)
   maxStudents     Int                @default(1)
   notes           String?
+  /// Borrado lógico: la clase deja de existir para el futuro, pero sigue
+  /// contando en las liquidaciones de los días en que se impartió.
+  deletedAt       DateTime?
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
   enrollments     Enrollment[]
@@ -264,11 +267,26 @@ model TeacherPayout {
   amountPaid  Float         @default(0)
   status      PayoutStatus  @default(PENDING)
   notes       String?
+  /// Fecha del último pago (se mantiene a partir de `payments`).
   paidAt      DateTime?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+  payments    TeacherPayoutPayment[]
 
   @@unique([teacherId, yearMonth])
+}
+
+/// Cada pago realizado a cuenta de una liquidación. `TeacherPayout.amountPaid` es su suma.
+model TeacherPayoutPayment {
+  id        String        @id @default(cuid())
+  payoutId  String
+  payout    TeacherPayout @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+  amount    Float
+  paidAt    DateTime      @default(now())
+  notes     String?
+  createdAt DateTime      @default(now())
+
+  @@index([payoutId])
 }
 
 model IncomeEntry {

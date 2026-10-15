@@ -3,6 +3,7 @@ import {
   monthBounds,
   scheduleTotalsInRange,
 } from "./schedule-occurrences.js";
+import { localIsoDate } from "./dates.js";
 import { roundMoney, sumMoney } from "./money.js";
 import { prisma } from "./prisma.js";
 
@@ -58,6 +59,7 @@ async function cancelledKeysForTeacher(teacherId: string, from: string, to: stri
 export async function scheduleTotalsForMonth(
   classGroups: Array<{
     durationMinutes: number;
+    deletedAt?: Date | null;
     scheduleSlots: Array<{ id: string; dayOfWeek: number; startTime: string; endTime: string }>;
   }>,
   yearMonth: string,
@@ -65,7 +67,11 @@ export async function scheduleTotalsForMonth(
 ) {
   const { from, to } = monthBounds(yearMonth);
   const cancelled = await cancelledKeysForTeacher(teacherId, from, to);
-  return scheduleTotalsInRange(from, to, classGroups, cancelled);
+  // Una clase borrada cuenta hasta el día en que se borró (incluido).
+  const groups = classGroups
+    .map((g) => ({ ...g, activeUntil: g.deletedAt ? localIsoDate(g.deletedAt) : null }))
+    .filter((g) => !g.activeUntil || g.activeUntil >= from);
+  return scheduleTotalsInRange(from, to, groups, cancelled);
 }
 
 export function computeBaseFromTeacherConfig(

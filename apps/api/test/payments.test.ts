@@ -22,6 +22,7 @@ afterAll(() => client.close());
 beforeEach(async () => {
   await prisma.studentPayment.deleteMany();
   await prisma.studentFee.deleteMany();
+  await prisma.teacherPayoutPayment.deleteMany();
   await prisma.teacherPayout.deleteMany();
 });
 
@@ -150,15 +151,70 @@ describe("liquidaciones de profesores", () => {
     expect((await prisma.teacherPayout.findUniqueOrThrow({ where: { id: p.id } })).amountPaid).toBe(600);
   });
 
-  it("regenerar con un importe menor no borra lo ya pagado", async () => {
+  it("cada pago queda en el historial y borrarlo recalcula lo pagado", async () => {
+    const p = await payoutFor(1000);
+    await payPayout(p.id, 300);
+    const second = await client.request("POST", "/payments/teacher-payouts/pay", {
+      payoutId: p.id,
+      amount: 200,
+      paidAt: "2026-10-20",
+    });
+    expect(second.body.payments).toHaveLength(2);
+    expect(second.body).toMatchObject({ amountPaid: 500, status: "PARTIAL" });
+
+    const toDelete = second.body.payments.find((x: { amount: number }) => x.amount === 300);
+    const after = await client.request("DELETE", `/payments/teacher-payout-payments/${toDelete.id}`);
+    expect(after.status).toBe(200);
+    expect(after.body).toMatchObject({ amountPaid: 200, status: "PARTIAL" });
+    expect(after.body.payments).toHaveLength(1);
+  });
+
+  it("anular los pagos los borra todos; no se puede fijar otro importe pagado a mano", async () => {
+    const p = await payoutFor(1000);
+    await payPayout(p.id, 400);
+    await payPayout(p.id, 100);
+    const bad = await client.request("PATCH", `/payments/teacher-payouts/${p.id}`, { amountPaid: 250 });
+    expect(bad.status).toBe(400);
+
+    const voided = await client.request("PATCH", `/payments/teacher-payouts/${p.id}`, { amountPaid: 0 });
+    expect(voided.body).toMatchObject({ amountPaid: 0, status: "PENDING", paidAt: null });
+    expect(await prisma.teacherPayoutPayment.count({ where: { payoutId: p.id } })).toBe(0);
+  });
+
+  it("una liquidación con pagos no se recalcula", async () => {
     const p = await payoutFor(1000);
     await payPayout(p.id, 800);
     await prisma.teacher.update({ where: { id: p.teacherId }, data: { monthlySalary: 700 } });
-    await client.request("POST", "/payments/teacher-payouts/generate", {
+
+    const single = await client.request("POST", "/payments/teacher-payouts/generate", {
       yearMonth: YM,
       teacherId: p.teacherId,
     });
+    expect(single.status).toBe(409);
+    const bulk = await client.request("POST", "/payments/teacher-payouts/generate", { yearMonth: YM });
+    expect(bulk.body.skippedWithPayments).toBeGreaterThanOrEqual(1);
+
     const after = await prisma.teacherPayout.findUniqueOrThrow({ where: { id: p.id } });
-    expect(after).toMatchObject({ amount: 700, amountPaid: 800, status: "PAID" });
+    expect(after).toMatchObject({ amount: 1000, amountPaid: 800, status: "PARTIAL" });
+  });
+
+  it("una liquidación sin pagos sí se recalcula", async () => {
+    const p = await payoutFor(1000);
+    await prisma.teacher.update({ where: { id: p.teacherId }, data: { monthlySalary: 700 } });
+    await client.request("POST", "/payments/teacher-payouts/generate", { yearMonth: YM, teacherId: p.teacherId });
+    expect((await prisma.teacherPayout.findUniqueOrThrow({ where: { id: p.id } })).amount).toBe(700);
+  });
+
+  it("filtra liquidaciones por fecha de pago usando el historial", async () => {
+    const p = await payoutFor(1000);
+    await client.request("POST", "/payments/teacher-payouts/pay", {
+      payoutId: p.id,
+      amount: 100,
+      paidAt: "2026-10-03",
+    });
+    const inRange = await client.request("GET", "/payments/teacher-payouts?paidFrom=2026-10-01&paidTo=2026-10-03");
+    const outRange = await client.request("GET", "/payments/teacher-payouts?paidFrom=2026-10-04&paidTo=2026-10-31");
+    expect(inRange.body.map((x: { id: string }) => x.id)).toContain(p.id);
+    expect(outRange.body.map((x: { id: string }) => x.id)).not.toContain(p.id);
   });
 });

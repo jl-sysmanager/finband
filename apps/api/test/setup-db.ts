@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { inject } from "vitest";
+import "../src/lib/timezone.js";
 
 // Debe ejecutarse antes de importar el cliente de Prisma.
 const templateDb = inject("templateDb");

@@ -176,3 +176,14 @@ describe("generación de cuotas", () => {
     ]);
   });
 });
+
+describe("vencimiento", () => {
+  it("la cuota de un mes vence el día 5 de ese mismo mes", async () => {
+    const s = await studentInClass({ monthlyFee: 50 });
+    await generateFeeForStudent(s.id, "2026-12");
+    const fee = await prisma.studentFee.findFirstOrThrow({ where: { studentId: s.id } });
+    expect([fee.dueDate!.getFullYear(), fee.dueDate!.getMonth() + 1, fee.dueDate!.getDate()]).toEqual([
+      2026, 12, 5,
+    ]);
+  });
+});

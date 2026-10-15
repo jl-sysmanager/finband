@@ -1,3 +1,5 @@
+// Debe ir primero: fija la zona horaria de la escuela antes de manejar fechas.
+import "./lib/timezone.js";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";

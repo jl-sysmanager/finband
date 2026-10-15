@@ -9,6 +9,7 @@ import {
   saveSchoolLogoFile,
   MAX_LOGO_BYTES,
 } from "../lib/school-logo.js";
+import { parseCalendarDate } from "../lib/dates.js";
 
 function publicBranding(s: {
   name: string;
@@ -162,8 +163,8 @@ export async function settingsRoutes(app: FastifyInstance) {
     return prisma.academicYear.create({
       data: {
         name: d.name,
-        startDate: new Date(d.startDate),
-        endDate: new Date(d.endDate),
+        startDate: parseCalendarDate(d.startDate),
+        endDate: parseCalendarDate(d.endDate),
         isActive: d.isActive ?? false,
       },
     });

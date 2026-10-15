@@ -1,6 +1,12 @@
 import { FEE_STATUS_LABELS } from "@finband/shared";
 import { prisma } from "./prisma.js";
 import { formatMoneyEs } from "./money-format.js";
+import { calendarDateOf } from "./dates.js";
+
+function formatCalendarDateEs(d: Date) {
+  const [y, m, day] = calendarDateOf(d).split("-");
+  return `${day}/${m}/${y}`;
+}
 
 function normalizePhoneForWhatsApp(phone: string | null | undefined) {
   if (!phone) return null;
@@ -33,7 +39,7 @@ export async function buildFeeReminder(feeId: string) {
     `Pagado: ${formatMoneyEs(fee.amountPaid)}`,
     `Pendiente: ${formatMoneyEs(pending)}`,
     `Estado: ${statusLabel}`,
-    fee.dueDate ? `Fecha límite: ${fee.dueDate.toISOString().slice(0, 10)}` : "",
+    fee.dueDate ? `Fecha límite: ${formatCalendarDateEs(fee.dueDate)}` : "",
     "",
     `Atentamente,`,
     schoolName,

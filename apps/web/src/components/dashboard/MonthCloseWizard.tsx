@@ -41,12 +41,18 @@ export function MonthCloseWizard({ open, onOpenChange }: Props) {
 
   const genPayouts = useMutation({
     mutationFn: () =>
-      api<{ generated: number; yearMonth: string }>("/payments/teacher-payouts/generate", {
-        method: "POST",
-        body: JSON.stringify({ yearMonth: ym }),
-      }),
+      api<{ generated: number; skippedWithPayments?: number; yearMonth: string }>(
+        "/payments/teacher-payouts/generate",
+        {
+          method: "POST",
+          body: JSON.stringify({ yearMonth: ym }),
+        },
+      ),
     onSuccess: (data) => {
-      toast(`Liquidaciones: ${data.generated} generada(s)`, "success");
+      const kept = data.skippedWithPayments
+        ? ` · ${data.skippedWithPayments} con pagos sin recalcular`
+        : "";
+      toast(`Liquidaciones: ${data.generated} generada(s)${kept}`, "success");
       qc.invalidateQueries({ queryKey: ["dashboard-action-items"] });
       qc.invalidateQueries({ queryKey: ["teacher-payouts"] });
     },

@@ -19,6 +19,12 @@ function sendPdf(reply: FastifyReply, filename: string, buffer: Buffer) {
 
 const METHOD_LABELS = PAYMENT_METHOD_LABELS as Record<string, string>;
 
+const PAYOUT_STATUS_LABELS: Record<string, string> = {
+  PENDING: "Pendiente",
+  PARTIAL: "Parcial",
+  PAID: "Pagado",
+};
+
 export async function receiptRoutes(app: FastifyInstance) {
   app.get("/student-payment/:id", async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = request.params as { id: string };
@@ -81,7 +87,7 @@ export async function receiptRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const payout = await prisma.teacherPayout.findUnique({
       where: { id },
-      include: { teacher: true },
+      include: { teacher: true, payments: { orderBy: { paidAt: "asc" } } },
     });
     if (!payout) return reply.status(404).send({ error: "Liquidación no encontrada" });
 
@@ -95,7 +101,7 @@ export async function receiptRoutes(app: FastifyInstance) {
           ["Profesor", `${teacher.firstName} ${teacher.lastName}`],
           ["Periodo", payout.yearMonth],
           ["Especialidad", teacher.specialty ?? "—"],
-          ["Estado", payout.status],
+          ["Estado", PAYOUT_STATUS_LABELS[payout.status] ?? payout.status],
         ]);
 
         d.font("Helvetica-Bold").fontSize(11).text("Desglose");
@@ -118,6 +124,17 @@ export async function receiptRoutes(app: FastifyInstance) {
         );
 
         drawTotalBar(d, "Total a abonar (mes)", payout.amount);
+
+        if (payout.payments.length > 0) {
+          d.font("Helvetica-Bold").fontSize(11).fillColor("#0f172a").text("Pagos realizados");
+          d.moveDown(0.3);
+          drawTable(
+            d,
+            ["Fecha", "Importe"],
+            payout.payments.map((p) => [p.paidAt.toLocaleDateString("es-ES"), formatEuro(p.amount)]),
+            { alignRightFrom: 1 },
+          );
+        }
 
         d
           .font("Helvetica")

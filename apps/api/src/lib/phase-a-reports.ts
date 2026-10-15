@@ -1,4 +1,5 @@
 import { prisma } from "./prisma.js";
+import { calendarDateOf, localIsoDate } from "./dates.js";
 
 export function parseYearMonth(yearMonth: string) {
   const [y, m] = yearMonth.split("-").map(Number);
@@ -71,7 +72,7 @@ export async function reportDebtAging(asOf = new Date()) {
       student: `${f.student.lastName}, ${f.student.firstName}`,
       yearMonth: f.yearMonth,
       pending: Math.round(pending * 100) / 100,
-      dueDate: due.toISOString().slice(0, 10),
+      dueDate: calendarDateOf(due),
       bucket: AGING_LABELS[key]!,
     });
   }
@@ -85,7 +86,7 @@ export async function reportDebtAging(asOf = new Date()) {
 
   const totalPending = summary.reduce((s, r) => s + r.amount, 0);
 
-  return { asOf: asOf.toISOString().slice(0, 10), summary, totalPending, details };
+  return { asOf: localIsoDate(asOf), summary, totalPending, details };
 }
 
 export async function reportFeesIssuedCollected(yearMonth: string) {

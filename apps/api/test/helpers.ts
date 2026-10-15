@@ -19,6 +19,7 @@ export async function resetDb() {
     prisma.classScheduleCancellation.deleteMany(),
     prisma.classScheduleSlot.deleteMany(),
     prisma.classGroup.deleteMany(),
+    prisma.teacherPayoutPayment.deleteMany(),
     prisma.teacherPayout.deleteMany(),
     prisma.student.deleteMany(),
     prisma.teacher.deleteMany(),

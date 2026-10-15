@@ -24,6 +24,7 @@ Variables opcionales en `.env` o entorno:
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Administrador inicial (solo se usa al crear la base). |
 | `SEED_MOCK` | `true` para cargar datos de demostración en una base nueva. |
 | `COOKIE_SECURE` | `true` si la aplicación se sirve detrás de HTTPS. |
+| `APP_TZ` | Zona horaria de la escuela para meses y días (por defecto `Europe/Madrid`). |
 
 Las sesiones duran 12 horas y se cierran al cambiar la contraseña del usuario. El acceso se bloquea 15 minutos tras 10 intentos desde la misma IP.
 
