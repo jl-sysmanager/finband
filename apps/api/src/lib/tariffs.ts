@@ -1,7 +1,7 @@
 import type { ClassType, Student } from "@prisma/client";
 import { feeStatus } from "./fee-status.js";
 import { withLock } from "./locks.js";
-import { roundMoney, subtractMoney, sumMoney } from "./money.js";
+import { percentOfCents, sumCents } from "./money.js";
 import { prisma } from "./prisma.js";
 import { monthBounds } from "./schedule-occurrences.js";
 import { calendarDateInMonth, calendarDateOf, yearMonthOf } from "./dates.js";
@@ -71,6 +71,7 @@ export async function resolveTariffAmount(
   return { amount: best.amount, ruleName: best.name };
 }
 
+/** Cuota del mes en céntimos (también las líneas de detalle). */
 export async function calculateStudentMonthlyFee(
   studentId: string,
   yearMonth: string = currentYearMonth(),
@@ -98,25 +99,26 @@ export async function calculateStudentMonthlyFee(
   const lineItems: Array<{ label: string; amount: number }> = [];
 
   if (student.monthlyFee != null && student.monthlyFee > 0) {
-    lineItems.push({ label: "Cuota fija", amount: roundMoney(student.monthlyFee) });
+    lineItems.push({ label: "Cuota fija", amount: student.monthlyFee });
   } else {
     for (const enr of student.enrollments) {
       const { amount, ruleName } = await resolveTariffAmount(student, enr);
       if (amount > 0) {
         lineItems.push({
           label: `${enr.classGroup.name}${ruleName ? ` (${ruleName})` : ""}`,
-          amount: roundMoney(amount),
+          amount,
         });
       }
     }
   }
-  const baseAmount = sumMoney(lineItems.map((l) => l.amount));
+  const baseAmount = sumCents(lineItems.map((l) => l.amount));
 
+  // PERCENT guarda centésimas de porcentaje y FIXED céntimos.
   const discounts = student.discounts
     .filter((d) => discountAppliesToMonth(d, yearMonth))
-    .map((d) => (d.type === "PERCENT" ? roundMoney((baseAmount * d.value) / 100) : roundMoney(d.value)));
-  const discountAmount = Math.min(sumMoney(discounts), baseAmount);
-  const totalAmount = subtractMoney(baseAmount, discountAmount);
+    .map((d) => (d.type === "PERCENT" ? percentOfCents(baseAmount, d.value) : d.value));
+  const discountAmount = Math.min(sumCents(discounts), baseAmount);
+  const totalAmount = baseAmount - discountAmount;
 
   return { baseAmount, discountAmount, totalAmount, lineItems };
 }
@@ -233,7 +235,7 @@ async function computeFeePreview(yearMonth: string) {
       eligible: eligible.length,
       skippedNoAmount: rows.filter((r) => r.issue === "no_amount").length,
       skippedHasPayments: rows.filter((r) => r.issue === "has_payments").length,
-      totalEligibleAmount: sumMoney(eligible.map((r) => r.totalAmount)),
+      totalEligibleAmount: sumCents(eligible.map((r) => r.totalAmount)),
     },
     calcs,
   };

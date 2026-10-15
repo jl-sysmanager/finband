@@ -26,6 +26,7 @@ export async function buildFeeReminder(feeId: string) {
 
   const school = await prisma.schoolSettings.findFirst();
   const schoolName = school?.name ?? "Escuela de Música";
+  // Céntimos: la ruta responde en euros (lib/money-api.ts).
   const pending = Math.max(0, fee.totalAmount - fee.amountPaid);
   const student = fee.student;
   const statusLabel = FEE_STATUS_LABELS[fee.status as keyof typeof FEE_STATUS_LABELS] ?? fee.status;

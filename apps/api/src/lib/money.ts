@@ -1,30 +1,27 @@
 /**
- * Los importes se guardan como Float en SQLite. Toda aritmética y comparación de
- * dinero pasa por céntimos enteros para no arrastrar errores de coma flotante
- * (p. ej. 10,10 × 3 = 30,299999…).
+ * Los importes se guardan en céntimos enteros y toda la lógica de la API trabaja
+ * en céntimos. Solo se pasa a euros en el borde: respuestas HTTP (lib/money-api.ts),
+ * informes, PDF y Excel. La entrada llega ya en céntimos desde los esquemas de
+ * @finband/shared.
  */
+export { centsToEuros as fromCents, eurosToCents as toCents } from "@finband/shared";
 
-/** Céntimos enteros, redondeando la mitad lejos de cero (10,005 → 1001). */
-export function toCents(amount: number): number {
-  const scaled = Number((Math.abs(amount) * 100).toPrecision(12));
-  return Math.sign(amount) * Math.round(scaled);
+/**
+ * Redondea a céntimo entero un resultado intermedio no entero (horas × tarifa,
+ * porcentajes…), la mitad lejos de cero.
+ */
+export function roundCents(value: number): number {
+  const abs = Number(Math.abs(value).toPrecision(12));
+  return Math.sign(value) * Math.round(abs) || 0;
 }
 
-export function fromCents(cents: number): number {
-  return cents / 100;
+export function sumCents(amounts: Iterable<number>): number {
+  let total = 0;
+  for (const a of amounts) total += a;
+  return total;
 }
 
-export function roundMoney(amount: number): number {
-  return fromCents(toCents(amount));
-}
-
-export function sumMoney(amounts: Iterable<number>): number {
-  let cents = 0;
-  for (const a of amounts) cents += toCents(a);
-  return fromCents(cents);
-}
-
-/** Diferencia redondeada a céntimos (a − b). */
-export function subtractMoney(a: number, b: number): number {
-  return fromCents(toCents(a) - toCents(b));
+/** Porcentaje de un importe; el porcentaje viene en centésimas (12,5 % → 1250). */
+export function percentOfCents(cents: number, percentHundredths: number): number {
+  return roundCents((cents * percentHundredths) / 10_000);
 }

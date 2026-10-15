@@ -14,6 +14,7 @@ import {
   requireAdmin,
 } from "./lib/auth-plugin.js";
 import { config } from "./lib/config.js";
+import { respondInEuros } from "./lib/money-api.js";
 import { authRoutes, publicAuthRoutes } from "./routes/auth.js";
 import { classRoutes } from "./routes/classes.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
@@ -60,12 +61,17 @@ export async function buildApp(options: { logger?: boolean } = {}) {
 
         await secured.register(authRoutes, { prefix: "/auth" });
         await secured.register(dashboardRoutes, { prefix: "/dashboard" });
-        await secured.register(studentRoutes, { prefix: "/students" });
-        await secured.register(teacherRoutes, { prefix: "/teachers" });
-        await secured.register(classRoutes, { prefix: "/classes" });
-        await secured.register(tariffRoutes, { prefix: "/tariffs" });
-        await secured.register(financeRoutes, { prefix: "/finance" });
-        await secured.register(paymentRoutes, { prefix: "/payments" });
+        // Rutas de entidades: trabajan en céntimos y responden en euros.
+        await secured.register(async (entities) => {
+          respondInEuros(entities);
+          await entities.register(studentRoutes, { prefix: "/students" });
+          await entities.register(teacherRoutes, { prefix: "/teachers" });
+          await entities.register(classRoutes, { prefix: "/classes" });
+          await entities.register(tariffRoutes, { prefix: "/tariffs" });
+          await entities.register(financeRoutes, { prefix: "/finance" });
+          await entities.register(paymentRoutes, { prefix: "/payments" });
+        });
+        // Informes y cuadro de mando construyen sus importes ya en euros.
         await secured.register(reportRoutes, { prefix: "/reports" });
         await secured.register(settingsRoutes, { prefix: "/settings" });
 

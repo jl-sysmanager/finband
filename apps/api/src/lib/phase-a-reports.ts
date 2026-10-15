@@ -1,5 +1,11 @@
+import { fromCents, toCents } from "./money.js";
 import { prisma } from "./prisma.js";
 import { calendarDateOf, localIsoDate } from "./dates.js";
+
+/*
+ * Los informes suman en céntimos y devuelven euros: su resultado va tal cual a la
+ * respuesta JSON, al PDF y al Excel.
+ */
 
 export function parseYearMonth(yearMonth: string) {
   const [y, m] = yearMonth.split("-").map(Number);
@@ -54,7 +60,7 @@ export async function reportDebtAging(asOf = new Date()) {
   for (const f of fees) {
     if (f.student.deletedAt || f.student.status !== "ACTIVE") continue;
     const pending = f.totalAmount - f.amountPaid;
-    if (pending <= 0.001) continue;
+    if (pending <= 0) continue;
 
     const due = feeDueDate(f);
     const msPerDay = 86400000;
@@ -71,7 +77,7 @@ export async function reportDebtAging(asOf = new Date()) {
     details.push({
       student: `${f.student.lastName}, ${f.student.firstName}`,
       yearMonth: f.yearMonth,
-      pending: Math.round(pending * 100) / 100,
+      pending: fromCents(pending),
       dueDate: calendarDateOf(due),
       bucket: AGING_LABELS[key]!,
     });
@@ -81,10 +87,10 @@ export async function reportDebtAging(asOf = new Date()) {
 
   const summary = (Object.keys(buckets) as Array<keyof typeof buckets>).map((k) => ({
     bucket: AGING_LABELS[k]!,
-    amount: Math.round(buckets[k] * 100) / 100,
+    amount: fromCents(buckets[k]),
   }));
 
-  const totalPending = summary.reduce((s, r) => s + r.amount, 0);
+  const totalPending = fromCents(Object.values(buckets).reduce((s, cents) => s + cents, 0));
 
   return { asOf: localIsoDate(asOf), summary, totalPending, details };
 }
@@ -104,9 +110,9 @@ export async function reportFeesIssuedCollected(yearMonth: string) {
     const pending = f.totalAmount - f.amountPaid;
     return {
       student: `${f.student.lastName}, ${f.student.firstName}`,
-      issued: f.totalAmount,
-      collected: f.amountPaid,
-      pending,
+      issued: fromCents(f.totalAmount),
+      collected: fromCents(f.amountPaid),
+      pending: fromCents(pending),
       status: f.status,
     };
   });
@@ -117,9 +123,9 @@ export async function reportFeesIssuedCollected(yearMonth: string) {
   return {
     yearMonth,
     totals: {
-      issued: Math.round(issued * 100) / 100,
-      collected: Math.round(collected * 100) / 100,
-      pending: Math.round(pending * 100) / 100,
+      issued: fromCents(issued),
+      collected: fromCents(collected),
+      pending: fromCents(pending),
       collectionRate,
       feeCount: fees.length,
     },
@@ -141,9 +147,9 @@ export async function reportPayoutsExpectedPaid(yearMonth: string) {
     paid += p.amountPaid;
     return {
       teacher: `${p.teacher.lastName}, ${p.teacher.firstName}`,
-      expected: p.amount,
-      paid: p.amountPaid,
-      pending: p.amount - p.amountPaid,
+      expected: fromCents(p.amount),
+      paid: fromCents(p.amountPaid),
+      pending: fromCents(p.amount - p.amountPaid),
       status: p.status,
     };
   });
@@ -154,9 +160,9 @@ export async function reportPayoutsExpectedPaid(yearMonth: string) {
   return {
     yearMonth,
     totals: {
-      expected: Math.round(expected * 100) / 100,
-      paid: Math.round(paid * 100) / 100,
-      pending: Math.round(pending * 100) / 100,
+      expected: fromCents(expected),
+      paid: fromCents(paid),
+      pending: fromCents(pending),
       paymentRate,
       payoutCount: payouts.length,
     },
@@ -197,10 +203,10 @@ async function monthFinancials(yearMonth: string) {
   const feeCollections = feePaymentsAgg._sum.amount ?? 0;
 
   return {
-    income,
-    expenses,
-    accountingBalance: income - expenses,
-    feeCollections,
+    income: fromCents(income),
+    expenses: fromCents(expenses),
+    accountingBalance: fromCents(income - expenses),
+    feeCollections: fromCents(feeCollections),
     activeStudents,
     feesIssued: feeStats.totals.issued,
     feesCollectedOnFees: feeStats.totals.collected,
@@ -209,7 +215,7 @@ async function monthFinancials(yearMonth: string) {
     payoutsExpected: payoutStats.totals.expected,
     payoutsPaid: payoutStats.totals.paid,
     payoutsPending: payoutStats.totals.pending,
-    cashFlowHint: feeCollections - payoutStats.totals.paid,
+    cashFlowHint: fromCents(feeCollections - toCents(payoutStats.totals.paid)),
   };
 }
 

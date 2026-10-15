@@ -7,7 +7,7 @@ import { instantRangeFilter, parseCalendarDate, yearMonthRangeFilter } from "../
 import { payoutStatus } from "../lib/fee-status.js";
 import { withLock } from "../lib/locks.js";
 import { formatMoneyEs } from "../lib/money-format.js";
-import { roundMoney, subtractMoney, sumMoney, toCents } from "../lib/money.js";
+import { fromCents, sumCents } from "../lib/money.js";
 import { prisma } from "../lib/prisma.js";
 import { calculateTeacherPayout } from "../lib/teacher-payout.js";
 
@@ -36,7 +36,7 @@ async function syncPayoutPaid(tx: Prisma.TransactionClient, payoutId: string) {
     where: { id: payoutId },
     include: { payments: { select: { amount: true, paidAt: true } } },
   });
-  const amountPaid = sumMoney(payout.payments.map((p) => p.amount));
+  const amountPaid = sumCents(payout.payments.map((p) => p.amount));
   const lastPaidAt = payout.payments.reduce<Date | null>(
     (latest, p) => (!latest || p.paidAt > latest ? p.paidAt : latest),
     null,
@@ -177,8 +177,8 @@ export async function teacherPayoutRoutes(app: FastifyInstance) {
       let paymentId = "";
       const payout = await withPayout(found, async (tx) => {
         const current = await tx.teacherPayout.findUniqueOrThrow({ where: { id: found.id } });
-        const pending = subtractMoney(current.amount, current.amountPaid);
-        if (toCents(d.amount) > toCents(pending)) {
+        const pending = current.amount - current.amountPaid;
+        if (d.amount > pending) {
           throw new PayoutRejected(
             `El pago supera el importe pendiente (${formatMoneyEs(Math.max(0, pending))})`,
           );
@@ -186,7 +186,7 @@ export async function teacherPayoutRoutes(app: FastifyInstance) {
         const payment = await tx.teacherPayoutPayment.create({
           data: {
             payoutId: found.id,
-            amount: roundMoney(d.amount),
+            amount: d.amount,
             paidAt: d.paidAt ? parseCalendarDate(d.paidAt) : new Date(),
             notes: d.notes,
           },
@@ -197,7 +197,7 @@ export async function teacherPayoutRoutes(app: FastifyInstance) {
         action: "PAY",
         entityType: "teacher_payout",
         entityId: payout.id,
-        details: { paymentId, amount: roundMoney(d.amount), amountPaid: payout.amountPaid },
+        details: { paymentId, amount: fromCents(d.amount), amountPaid: fromCents(payout.amountPaid) },
       });
       return payout;
     } catch (e) {
@@ -220,7 +220,7 @@ export async function teacherPayoutRoutes(app: FastifyInstance) {
       action: "DELETE",
       entityType: "teacher_payout_payment",
       entityId: id,
-      details: { payoutId: payout.id, amount: payment.amount },
+      details: { payoutId: payout.id, amount: fromCents(payment.amount) },
     });
     return payout;
   });
@@ -251,7 +251,7 @@ export async function teacherPayoutRoutes(app: FastifyInstance) {
         action: "VOID_PAYMENTS",
         entityType: "teacher_payout",
         entityId: id,
-        details: { amountPaid: `${found.amountPaid} → 0` },
+        details: { amountPaid: `${fromCents(found.amountPaid)} → 0` },
       });
     }
     return payout;
@@ -268,7 +268,11 @@ export async function teacherPayoutRoutes(app: FastifyInstance) {
       action: "DELETE",
       entityType: "teacher_payout",
       entityId: id,
-      details: { yearMonth: payout.yearMonth, teacherId: payout.teacherId, amountPaid: payout.amountPaid },
+      details: {
+        yearMonth: payout.yearMonth,
+        teacherId: payout.teacherId,
+        amountPaid: fromCents(payout.amountPaid),
+      },
     });
     return { ok: true };
   });

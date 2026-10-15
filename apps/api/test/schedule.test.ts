@@ -31,40 +31,40 @@ describe("calendario mensual", () => {
   });
 });
 
-describe("computeBaseFromTeacherConfig", () => {
+describe("computeBaseFromTeacherConfig (céntimos)", () => {
   const schedule = { sessionCount: 8, totalHours: 10, classCount: 2 };
   const base = { monthlySalary: null, costPerClass: null, hourlyRate: 0, weeklyHours: null };
 
   it("prioriza el salario mensual", () => {
     expect(
-      computeBaseFromTeacherConfig({ ...base, monthlySalary: 1200, costPerClass: 30 }, schedule, OCT),
-    ).toEqual({ baseAmount: 1200, basis: "monthlySalary" });
+      computeBaseFromTeacherConfig({ ...base, monthlySalary: 120000, costPerClass: 3000 }, schedule, OCT),
+    ).toEqual({ baseAmount: 120000, basis: "monthlySalary" });
   });
 
   it("coste por clase × sesiones del horario", () => {
-    expect(computeBaseFromTeacherConfig({ ...base, costPerClass: 25 }, schedule, OCT)).toEqual({
-      baseAmount: 200,
+    expect(computeBaseFromTeacherConfig({ ...base, costPerClass: 2500 }, schedule, OCT)).toEqual({
+      baseAmount: 20000,
       basis: "costPerClass",
     });
   });
 
   it("coste por clase sin horario estima 4 sesiones por clase", () => {
     const empty = { sessionCount: 0, totalHours: 0, classCount: 2 };
-    expect(computeBaseFromTeacherConfig({ ...base, costPerClass: 25 }, empty, OCT).baseAmount).toBe(200);
+    expect(computeBaseFromTeacherConfig({ ...base, costPerClass: 2500 }, empty, OCT).baseAmount).toBe(20000);
   });
 
   it("tarifa por hora × horas del horario", () => {
-    expect(computeBaseFromTeacherConfig({ ...base, hourlyRate: 18 }, schedule, OCT)).toEqual({
-      baseAmount: 180,
+    expect(computeBaseFromTeacherConfig({ ...base, hourlyRate: 1800 }, schedule, OCT)).toEqual({
+      baseAmount: 18000,
       basis: "hourlyRate",
     });
   });
 
   it("tarifa por hora sin horario usa horas semanales, redondeado a céntimos", () => {
     const empty = { sessionCount: 0, totalHours: 0, classCount: 0 };
-    const r = computeBaseFromTeacherConfig({ ...base, hourlyRate: 15, weeklyHours: 10 }, empty, OCT);
+    const r = computeBaseFromTeacherConfig({ ...base, hourlyRate: 1500, weeklyHours: 10 }, empty, OCT);
     expect(r.basis).toBe("hourlyWeeklyEstimate");
-    expect(r.baseAmount).toBe(664.29); // 15 × 10 × 31/7
+    expect(r.baseAmount).toBe(66429); // 15 € × 10 h × 31/7 = 664,29 €
   });
 
   it("sin configuración no hay importe", () => {

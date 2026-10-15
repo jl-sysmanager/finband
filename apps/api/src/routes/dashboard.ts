@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { previewFeesForMonth } from "../lib/tariffs.js";
+import { fromCents } from "../lib/money.js";
 import { prisma } from "../lib/prisma.js";
 import { calendarDateOf, monthDateRange, yearMonthOf } from "../lib/dates.js";
 
@@ -55,11 +56,11 @@ export async function dashboardRoutes(app: FastifyInstance) {
       students,
       teachers,
       classes,
-      monthlyIncome: income,
-      monthlyExpenses: expenses,
-      monthlyBalance: income - expenses,
-      pendingCollections,
-      pendingTeacherPay,
+      monthlyIncome: fromCents(income),
+      monthlyExpenses: fromCents(expenses),
+      monthlyBalance: fromCents(income - expenses),
+      pendingCollections: fromCents(pendingCollections),
+      pendingTeacherPay: fromCents(pendingTeacherPay),
     };
   });
 
@@ -116,11 +117,11 @@ export async function dashboardRoutes(app: FastifyInstance) {
 
     return months.map((month) => ({
       month,
-      income: Math.round((incomeByMonth[month] ?? 0) * 100) / 100,
-      expenses: Math.round((expenseByMonth[month] ?? 0) * 100) / 100,
-      feesIssued: Math.round((feesIssuedByMonth[month] ?? 0) * 100) / 100,
-      feesCollected: Math.round((feesCollectedByMonth[month] ?? 0) * 100) / 100,
-      teacherPayoutsPaid: Math.round((payoutsPaidByMonth[month] ?? 0) * 100) / 100,
+      income: fromCents(incomeByMonth[month] ?? 0),
+      expenses: fromCents(expenseByMonth[month] ?? 0),
+      feesIssued: fromCents(feesIssuedByMonth[month] ?? 0),
+      feesCollected: fromCents(feesCollectedByMonth[month] ?? 0),
+      teacherPayoutsPaid: fromCents(payoutsPaidByMonth[month] ?? 0),
     }));
   });
 
@@ -144,14 +145,14 @@ export async function dashboardRoutes(app: FastifyInstance) {
         date: i.date,
         concept: i.concept,
         category: i.category.name,
-        amount: i.amount,
+        amount: fromCents(i.amount),
       })),
       ...expenses.map((e) => ({
         type: "expense" as const,
         date: e.date,
         concept: e.concept,
         category: e.category.name,
-        amount: e.amount,
+        amount: fromCents(e.amount),
       })),
     ]
       .sort((a, b) => b.date.getTime() - a.date.getTime())
@@ -215,7 +216,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
         yearMonth: f.yearMonth,
         pending: Math.max(0, f.totalAmount - f.amountPaid),
       }))
-      .filter((f) => f.pending > 0.001)
+      .filter((f) => f.pending > 0)
       .sort((a, b) => b.pending - a.pending);
 
     const withoutFeeAll = feePreview.rows.filter((r) => r.totalAmount > 0 && !r.existingFeeId);
@@ -227,22 +228,22 @@ export async function dashboardRoutes(app: FastifyInstance) {
         items: withoutFeeAll.slice(0, 8).map((r) => ({
           studentId: r.studentId,
           studentName: r.studentName,
-          totalAmount: r.totalAmount,
+          totalAmount: fromCents(r.totalAmount),
         })),
       },
       unpaidFees: {
         count: unpaidAll.length,
-        totalPending: unpaidAll.reduce((s, f) => s + f.pending, 0),
-        items: unpaidAll.slice(0, 10),
+        totalPending: fromCents(unpaidAll.reduce((s, f) => s + f.pending, 0)),
+        items: unpaidAll.slice(0, 10).map((f) => ({ ...f, pending: fromCents(f.pending) })),
       },
       pendingPayouts: {
         count: pendingPayouts.length,
-        totalPending: pendingPayouts.reduce((s, p) => s + (p.amount - p.amountPaid), 0),
+        totalPending: fromCents(pendingPayouts.reduce((s, p) => s + (p.amount - p.amountPaid), 0)),
         items: pendingPayouts.map((p) => ({
           id: p.id,
           teacherName: `${p.teacher.lastName}, ${p.teacher.firstName}`,
           yearMonth: p.yearMonth,
-          pending: p.amount - p.amountPaid,
+          pending: fromCents(p.amount - p.amountPaid),
         })),
       },
       studentsWithoutTeacher: {
@@ -275,7 +276,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
       id: f.id,
       studentName: `${f.student.firstName} ${f.student.lastName}`,
       dueDate: f.dueDate,
-      pending: f.totalAmount - f.amountPaid,
+      pending: fromCents(f.totalAmount - f.amountPaid),
       status: f.status,
     }));
   });

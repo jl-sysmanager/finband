@@ -6,6 +6,9 @@ import { prisma } from "../src/lib/prisma.js";
 
 export { prisma };
 
+/** Euros → céntimos, para escribir importes en Prisma y comparar lo que devuelve. */
+export const eur = (euros: number) => Math.round(euros * 100);
+
 /** Vacía todas las tablas de datos (respetando las claves ajenas). */
 export async function resetDb() {
   await prisma.$transaction([

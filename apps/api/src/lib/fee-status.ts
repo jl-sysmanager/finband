@@ -1,17 +1,16 @@
 import type { FeeStatus, PayoutStatus } from "@prisma/client";
-import { toCents } from "./money.js";
 
-function statusFor(total: number, paid: number): FeeStatus & PayoutStatus {
-  const paidCents = toCents(paid);
+/** Estado según lo pagado, ambos en céntimos. */
+function statusFor(totalCents: number, paidCents: number): FeeStatus & PayoutStatus {
   if (paidCents <= 0) return "PENDING";
-  if (paidCents >= toCents(total)) return "PAID";
+  if (paidCents >= totalCents) return "PAID";
   return "PARTIAL";
 }
 
-export function feeStatus(total: number, paid: number): FeeStatus {
-  return statusFor(total, paid);
+export function feeStatus(totalCents: number, paidCents: number): FeeStatus {
+  return statusFor(totalCents, paidCents);
 }
 
-export function payoutStatus(total: number, paid: number): PayoutStatus {
-  return statusFor(total, paid);
+export function payoutStatus(totalCents: number, paidCents: number): PayoutStatus {
+  return statusFor(totalCents, paidCents);
 }

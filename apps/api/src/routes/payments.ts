@@ -7,7 +7,7 @@ import { feeStatus } from "../lib/fee-status.js";
 import { recordAudit } from "../lib/audit.js";
 import { withLock } from "../lib/locks.js";
 import { formatMoneyEs } from "../lib/money-format.js";
-import { roundMoney, subtractMoney, sumMoney, toCents } from "../lib/money.js";
+import { fromCents, sumCents } from "../lib/money.js";
 import { buildFeeReminder } from "../lib/reminders.js";
 import { prisma } from "../lib/prisma.js";
 import { feeLockKey } from "../lib/tariffs.js";
@@ -23,8 +23,8 @@ class PaymentRejected extends Error {
   }
 }
 
-function overpaymentMessage(pending: number) {
-  return `El cobro supera el importe pendiente (${formatMoneyEs(Math.max(0, pending))})`;
+function overpaymentMessage(pendingCents: number) {
+  return `El cobro supera el importe pendiente (${formatMoneyEs(Math.max(0, pendingCents))})`;
 }
 
 /** Recalcula lo cobrado de una cuota a partir de sus cobros (fuente de verdad). */
@@ -33,7 +33,7 @@ async function syncFeePaid(tx: Prisma.TransactionClient, feeId: string) {
     where: { id: feeId },
     include: { payments: { select: { amount: true } } },
   });
-  const amountPaid = sumMoney(fee.payments.map((p) => p.amount));
+  const amountPaid = sumCents(fee.payments.map((p) => p.amount));
   await tx.studentFee.update({
     where: { id: feeId },
     data: { amountPaid, status: feeStatus(fee.totalAmount, amountPaid) },
@@ -67,10 +67,10 @@ async function pendingOnFee(
     where: { id: feeId },
     include: { payments: { select: { id: true, amount: true } } },
   });
-  const paid = sumMoney(
+  const paid = sumCents(
     fee.payments.filter((p) => p.id !== excludePaymentId).map((p) => p.amount),
   );
-  return subtractMoney(fee.totalAmount, paid);
+  return fee.totalAmount - paid;
 }
 
 const studentPaymentPatchSchema = z.object({
@@ -124,13 +124,13 @@ export async function paymentRoutes(app: FastifyInstance) {
     try {
       const payment = await withFee(fee, async (tx) => {
         const pending = await pendingOnFee(tx, fee.id);
-        if (toCents(d.amount) > toCents(pending)) {
+        if (d.amount > pending) {
           throw new PaymentRejected(overpaymentMessage(pending));
         }
         return tx.studentPayment.create({
           data: {
             feeId: fee.id,
-            amount: roundMoney(d.amount),
+            amount: d.amount,
             method: d.method,
             paidAt: d.paidAt ? parseCalendarDate(d.paidAt) : new Date(),
             notes: d.notes,
@@ -141,7 +141,7 @@ export async function paymentRoutes(app: FastifyInstance) {
         action: "CREATE",
         entityType: "student_payment",
         entityId: payment.id,
-        details: { feeId: fee.id, amount: payment.amount, method: payment.method },
+        details: { feeId: fee.id, amount: fromCents(payment.amount), method: payment.method },
       });
       return payment;
     } catch (e) {
@@ -167,7 +167,7 @@ export async function paymentRoutes(app: FastifyInstance) {
       const payment = await withFee(existing.fee, async (tx) => {
         if (d.amount !== undefined) {
           const pending = await pendingOnFee(tx, existing.feeId, id);
-          if (toCents(d.amount) > toCents(pending)) {
+          if (d.amount > pending) {
             throw new PaymentRejected(overpaymentMessage(pending));
           }
         }
@@ -175,7 +175,6 @@ export async function paymentRoutes(app: FastifyInstance) {
           where: { id },
           data: {
             ...d,
-            amount: d.amount === undefined ? undefined : roundMoney(d.amount),
             paidAt: d.paidAt ? parseCalendarDate(d.paidAt) : undefined,
           },
         });
@@ -186,8 +185,8 @@ export async function paymentRoutes(app: FastifyInstance) {
         entityId: id,
         details: {
           feeId: existing.feeId,
-          ...(d.amount !== undefined && toCents(d.amount) !== toCents(existing.amount)
-            ? { amount: `${existing.amount} → ${payment.amount}` }
+          ...(d.amount !== undefined && d.amount !== existing.amount
+            ? { amount: `${fromCents(existing.amount)} → ${fromCents(payment.amount)}` }
             : {}),
           ...(d.method && d.method !== existing.method ? { method: `${existing.method} → ${d.method}` } : {}),
         },
@@ -256,7 +255,7 @@ export async function paymentRoutes(app: FastifyInstance) {
       action: "DELETE",
       entityType: "student_payment",
       entityId: id,
-      details: { feeId: existing.feeId, amount: existing.amount },
+      details: { feeId: existing.feeId, amount: fromCents(existing.amount) },
     });
     return { ok: true };
   });

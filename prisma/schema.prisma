@@ -104,11 +104,11 @@ model Teacher {
   phone          String?
   email          String?
   specialty      String?
-  hourlyRate     Float         @default(0)
-  monthlySalary  Float?
-  costPerClass   Float?
+  hourlyRate     Int           @default(0)
+  monthlySalary  Int  ?
+  costPerClass   Int  ?
   weeklyHours    Float?
-  transportCostPerDay Float    @default(0)
+  transportCostPerDay Int      @default(0)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
@@ -131,7 +131,7 @@ model Student {
   level            String?
   primaryTeacherId String?
   primaryTeacher   Teacher?          @relation("PrimaryTeacher", fields: [primaryTeacherId], references: [id])
-  monthlyFee       Float?
+  monthlyFee       Int  ?
   status           StudentStatus     @default(ACTIVE)
   deletedAt        DateTime?
   createdAt        DateTime          @default(now())
@@ -204,7 +204,7 @@ model TariffRule {
   instrument  String?
   level       String?
   classType   ClassType?
-  amount      Float
+  amount      Int  
   priority    Int        @default(0)
   active      Boolean    @default(true)
   createdAt   DateTime   @default(now())
@@ -217,7 +217,7 @@ model StudentDiscount {
   student   Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
   name      String
   type      DiscountType
-  value     Float
+  value     Int  
   isScholarship Boolean  @default(false)
   validFrom DateTime?
   validTo   DateTime?
@@ -230,10 +230,10 @@ model StudentFee {
   studentId   String
   student     Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
   yearMonth   String
-  baseAmount  Float
-  discountAmount Float         @default(0)
-  totalAmount Float
-  amountPaid  Float            @default(0)
+  baseAmount  Int  
+  discountAmount Int           @default(0)
+  totalAmount Int  
+  amountPaid  Int              @default(0)
   status      FeeStatus        @default(PENDING)
   dueDate     DateTime?
   createdAt   DateTime         @default(now())
@@ -248,7 +248,7 @@ model StudentPayment {
   id        String        @id @default(cuid())
   feeId     String
   fee       StudentFee    @relation(fields: [feeId], references: [id], onDelete: Cascade)
-  amount    Float
+  amount    Int  
   method    PaymentMethod
   paidAt    DateTime      @default(now())
   notes     String?
@@ -260,11 +260,11 @@ model TeacherPayout {
   teacherId   String
   teacher     Teacher       @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   yearMonth   String
-  baseAmount  Float         @default(0)
-  transportAmount Float     @default(0)
+  baseAmount  Int           @default(0)
+  transportAmount Int       @default(0)
   workDays    Int           @default(0)
-  amount      Float
-  amountPaid  Float         @default(0)
+  amount      Int  
+  amountPaid  Int           @default(0)
   status      PayoutStatus  @default(PENDING)
   notes       String?
   /// Fecha del último pago (se mantiene a partir de `payments`).
@@ -281,7 +281,7 @@ model TeacherPayoutPayment {
   id        String        @id @default(cuid())
   payoutId  String
   payout    TeacherPayout @relation(fields: [payoutId], references: [id], onDelete: Cascade)
-  amount    Float
+  amount    Int  
   paidAt    DateTime      @default(now())
   notes     String?
   createdAt DateTime      @default(now())
@@ -295,7 +295,7 @@ model IncomeEntry {
   concept    String
   categoryId String
   category   IncomeCategory @relation(fields: [categoryId], references: [id])
-  amount     Float
+  amount     Int  
   method     PaymentMethod?
   notes      String?
   createdAt  DateTime       @default(now())
@@ -308,7 +308,7 @@ model ExpenseEntry {
   concept    String
   categoryId String
   category   ExpenseCategory @relation(fields: [categoryId], references: [id])
-  amount     Float
+  amount     Int  
   notes      String?
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt

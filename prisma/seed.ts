@@ -11,6 +11,10 @@ import { randomBytes } from "node:crypto";
 
 const prisma = new PrismaClient();
 
+/** Los importes se guardan en céntimos y los porcentajes en centésimas (10 % → 1000). */
+const eur = (euros: number) => Math.round(euros * 100);
+const pct = (percent: number) => Math.round(percent * 100);
+
 function yearMonth(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
@@ -149,11 +153,11 @@ async function seedMock() {
       email: "l.martinez@finband.local",
       phone: "+34 600 111 001",
       specialty: "Piano",
-      hourlyRate: 28,
+      hourlyRate: eur(28),
       weeklyHours: 18,
-      monthlySalary: 1800,
-      costPerClass: 32,
-      transportCostPerDay: 6.5,
+      monthlySalary: eur(1800),
+      costPerClass: eur(32),
+      transportCostPerDay: eur(6.5),
     },
   });
 
@@ -167,10 +171,10 @@ async function seedMock() {
       email: "c.ruiz@finband.local",
       phone: "+34 600 111 002",
       specialty: "Guitarra",
-      hourlyRate: 25,
+      hourlyRate: eur(25),
       weeklyHours: 16,
-      costPerClass: 28,
-      transportCostPerDay: 5,
+      costPerClass: eur(28),
+      transportCostPerDay: eur(5),
     },
   });
 
@@ -183,10 +187,10 @@ async function seedMock() {
       lastName: "Vega",
       email: "e.vega@finband.local",
       specialty: "Lenguaje musical",
-      hourlyRate: 22,
+      hourlyRate: eur(22),
       weeklyHours: 12,
-      costPerClass: 24,
-      transportCostPerDay: 4.5,
+      costPerClass: eur(24),
+      transportCostPerDay: eur(4.5),
     },
   });
 
@@ -196,7 +200,7 @@ async function seedMock() {
       name: "Piano individual",
       instrument: "Piano",
       classType: ClassType.INDIVIDUAL,
-      amount: 75,
+      amount: eur(75),
       priority: 10,
     },
     {
@@ -204,21 +208,21 @@ async function seedMock() {
       name: "Guitarra individual",
       instrument: "Guitarra",
       classType: ClassType.INDIVIDUAL,
-      amount: 65,
+      amount: eur(65),
       priority: 10,
     },
     {
       id: "mock-tariff-3",
       name: "Lenguaje colectivo",
       classType: ClassType.LENGUAJE,
-      amount: 35,
+      amount: eur(35),
       priority: 5,
     },
     {
       id: "mock-tariff-4",
       name: "Banda",
       classType: ClassType.BANDA,
-      amount: 40,
+      amount: eur(40),
       priority: 5,
     },
   ] as const;
@@ -394,7 +398,7 @@ async function seedMock() {
       studentId: s1.id,
       name: "Descuento familiar (2º hermano)",
       type: "PERCENT",
-      value: 10,
+      value: pct(10),
       active: true,
     },
   });
@@ -407,7 +411,7 @@ async function seedMock() {
       studentId: s3.id,
       name: "Beca parcial",
       type: "FIXED",
-      value: 15,
+      value: eur(15),
       isScholarship: true,
       active: true,
     },
@@ -419,15 +423,15 @@ async function seedMock() {
       id: "mock-fee-1",
       studentId: s1.id,
       yearMonth: ym,
-      baseAmount: 110,
-      discountAmount: 11,
-      totalAmount: 99,
-      amountPaid: 99,
+      baseAmount: eur(110),
+      discountAmount: eur(11),
+      totalAmount: eur(99),
+      amountPaid: eur(99),
       status: FeeStatus.PAID,
       dueDate: due,
       lineItems: JSON.stringify([
-        { label: "Piano individual", amount: 75 },
-        { label: "Lenguaje colectivo", amount: 35 },
+        { label: "Piano individual", amount: eur(75) },
+        { label: "Lenguaje colectivo", amount: eur(35) },
       ]),
     },
     update: {},
@@ -439,7 +443,7 @@ async function seedMock() {
     create: {
       id: "mock-pay-1",
       feeId: feeLucia.id,
-      amount: 99,
+      amount: eur(99),
       method: PaymentMethod.BIZUM,
       paidAt: monthStart(),
     },
@@ -451,10 +455,10 @@ async function seedMock() {
       id: "mock-fee-2",
       studentId: s2.id,
       yearMonth: ym,
-      baseAmount: 105,
-      discountAmount: 0,
-      totalAmount: 105,
-      amountPaid: 50,
+      baseAmount: eur(105),
+      discountAmount: eur(0),
+      totalAmount: eur(105),
+      amountPaid: eur(50),
       status: FeeStatus.PARTIAL,
       dueDate: due,
     },
@@ -467,7 +471,7 @@ async function seedMock() {
     create: {
       id: "mock-pay-2",
       feeId: feeHugo.id,
-      amount: 50,
+      amount: eur(50),
       method: PaymentMethod.TRANSFERENCIA,
       paidAt: monthStart(),
     },
@@ -479,10 +483,10 @@ async function seedMock() {
       id: "mock-fee-3",
       studentId: s3.id,
       yearMonth: ym,
-      baseAmount: 110,
-      discountAmount: 15,
-      totalAmount: 95,
-      amountPaid: 0,
+      baseAmount: eur(110),
+      discountAmount: eur(15),
+      totalAmount: eur(95),
+      amountPaid: eur(0),
       status: FeeStatus.PENDING,
       dueDate: due,
     },
@@ -495,10 +499,10 @@ async function seedMock() {
       id: "mock-fee-4",
       studentId: s4.id,
       yearMonth: ym,
-      baseAmount: 100,
-      discountAmount: 0,
-      totalAmount: 100,
-      amountPaid: 0,
+      baseAmount: eur(100),
+      discountAmount: eur(0),
+      totalAmount: eur(100),
+      amountPaid: eur(0),
       status: FeeStatus.PENDING,
       dueDate: due,
     },
@@ -526,7 +530,7 @@ async function seedMock() {
         date: monthStart(),
         concept: "Cuota Lucía García",
         categoryId: incomeCuotas.id,
-        amount: 99,
+        amount: eur(99),
         method: PaymentMethod.BIZUM,
       },
       {
@@ -534,7 +538,7 @@ async function seedMock() {
         date: new Date(today.getFullYear(), today.getMonth(), 8),
         concept: "Cuota parcial Hugo López",
         categoryId: incomeCuotas.id,
-        amount: 50,
+        amount: eur(50),
         method: PaymentMethod.TRANSFERENCIA,
       },
     ] as const;
@@ -555,7 +559,7 @@ async function seedMock() {
         date: new Date(today.getFullYear(), today.getMonth(), 3),
         concept: "Matrícula Sofía Navarro",
         categoryId: incomeMat.id,
-        amount: 45,
+        amount: eur(45),
         method: PaymentMethod.EFECTIVO,
       },
       update: {},
@@ -569,14 +573,14 @@ async function seedMock() {
         date: monthStart(),
         concept: "Nómina Laura Martínez (anticipo)",
         categoryId: expProf.id,
-        amount: 900,
+        amount: eur(900),
       },
       {
         id: "mock-expense-2",
         date: new Date(today.getFullYear(), today.getMonth(), 10),
         concept: "Partituras y métodos",
         categoryId: expMat.id,
-        amount: 128.5,
+        amount: eur(128.5),
       },
     ] as const;
     for (const row of expenses) {
@@ -592,7 +596,7 @@ async function seedMock() {
     "../apps/api/src/lib/teacher-payout.js"
   );
   const mockPayoutPaid: Record<string, number> = {
-    [t1.id]: 900,
+    [t1.id]: eur(900),
     [t2.id]: 0,
   };
   for (const teacherId of [t1.id, t2.id, t3.id]) {

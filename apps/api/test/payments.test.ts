@@ -5,6 +5,7 @@ import {
   createStudent,
   createTeacher,
   enroll,
+  eur,
   prisma,
   resetDb,
   type TestClient,
@@ -28,7 +29,7 @@ beforeEach(async () => {
 
 async function feeOf(total: number) {
   const teacher = await createTeacher();
-  const s = await createStudent({ monthlyFee: total });
+  const s = await createStudent({ monthlyFee: eur(total) });
   const c = await createClass(teacher.id);
   await enroll(s.id, c.id);
   const res = await client.request("POST", `/students/${s.id}/generate-fee`, { yearMonth: YM });
@@ -45,15 +46,15 @@ describe("cobros de cuotas", () => {
   it("un cobro parcial y otro final dejan la cuota PAGADA", async () => {
     const fee = await feeOf(60);
     expect((await pay(fee.id, 25)).status).toBe(200);
-    expect(await reload(fee.id)).toMatchObject({ amountPaid: 25, status: "PARTIAL" });
+    expect(await reload(fee.id)).toMatchObject({ amountPaid: eur(25), status: "PARTIAL" });
     expect((await pay(fee.id, 35)).status).toBe(200);
-    expect(await reload(fee.id)).toMatchObject({ amountPaid: 60, status: "PAID" });
+    expect(await reload(fee.id)).toMatchObject({ amountPaid: eur(60), status: "PAID" });
   });
 
   it("tres cobros de 10,10 € saldan una cuota de 30,30 €", async () => {
     const fee = await feeOf(30.3);
     for (let i = 0; i < 3; i++) expect((await pay(fee.id, 10.1)).status).toBe(200);
-    expect(await reload(fee.id)).toMatchObject({ amountPaid: 30.3, status: "PAID" });
+    expect(await reload(fee.id)).toMatchObject({ amountPaid: eur(30.3), status: "PAID" });
   });
 
   it("rechaza un cobro que supera lo pendiente", async () => {
@@ -77,25 +78,25 @@ describe("cobros de cuotas", () => {
 
     const lower = await client.request("PATCH", `/payments/student-payments/${p.id}`, { amount: 20 });
     expect(lower.status).toBe(200);
-    expect(await reload(fee.id)).toMatchObject({ amountPaid: 20, status: "PARTIAL" });
+    expect(await reload(fee.id)).toMatchObject({ amountPaid: eur(20), status: "PARTIAL" });
 
     const over = await client.request("PATCH", `/payments/student-payments/${p.id}`, { amount: 50.5 });
     expect(over.status).toBe(400);
-    expect((await reload(fee.id)).amountPaid).toBe(20);
+    expect((await reload(fee.id)).amountPaid).toBe(eur(20));
   });
 
   it("borrar un cobro devuelve la cuota a PENDIENTE", async () => {
     const fee = await feeOf(50);
     const p = (await pay(fee.id, 50)).body;
     expect((await client.request("DELETE", `/payments/student-payments/${p.id}`)).status).toBe(200);
-    expect(await reload(fee.id)).toMatchObject({ amountPaid: 0, status: "PENDING" });
+    expect(await reload(fee.id)).toMatchObject({ amountPaid: eur(0), status: "PENDING" });
   });
 
   it("cobros simultáneos no superan el total de la cuota", async () => {
     const fee = await feeOf(50);
     const results = await Promise.all([pay(fee.id, 30), pay(fee.id, 30), pay(fee.id, 30)]);
     expect(results.filter((r) => r.status === 200)).toHaveLength(1);
-    expect(await reload(fee.id)).toMatchObject({ amountPaid: 30, status: "PARTIAL" });
+    expect(await reload(fee.id)).toMatchObject({ amountPaid: eur(30), status: "PARTIAL" });
   });
 
   it("generar de nuevo una cuota con cobros devuelve 409", async () => {
@@ -119,7 +120,7 @@ describe("cobros de cuotas", () => {
 
 describe("liquidaciones de profesores", () => {
   async function payoutFor(monthlySalary: number) {
-    const t = await createTeacher({ monthlySalary });
+    const t = await createTeacher({ monthlySalary: eur(monthlySalary) });
     const gen = await client.request("POST", "/payments/teacher-payouts/generate", {
       yearMonth: YM,
       teacherId: t.id,
@@ -141,14 +142,14 @@ describe("liquidaciones de profesores", () => {
     await payPayout(p.id, 900);
     const res = await payPayout(p.id, 100.01);
     expect(res.status).toBe(400);
-    expect((await prisma.teacherPayout.findUniqueOrThrow({ where: { id: p.id } })).amountPaid).toBe(900);
+    expect((await prisma.teacherPayout.findUniqueOrThrow({ where: { id: p.id } })).amountPaid).toBe(eur(900));
   });
 
   it("pagos simultáneos no superan el total", async () => {
     const p = await payoutFor(1000);
     const results = await Promise.all([payPayout(p.id, 600), payPayout(p.id, 600)]);
     expect(results.filter((r) => r.status === 200)).toHaveLength(1);
-    expect((await prisma.teacherPayout.findUniqueOrThrow({ where: { id: p.id } })).amountPaid).toBe(600);
+    expect((await prisma.teacherPayout.findUniqueOrThrow({ where: { id: p.id } })).amountPaid).toBe(eur(600));
   });
 
   it("cada pago queda en el historial y borrarlo recalcula lo pagado", async () => {
@@ -184,7 +185,7 @@ describe("liquidaciones de profesores", () => {
   it("una liquidación con pagos no se recalcula", async () => {
     const p = await payoutFor(1000);
     await payPayout(p.id, 800);
-    await prisma.teacher.update({ where: { id: p.teacherId }, data: { monthlySalary: 700 } });
+    await prisma.teacher.update({ where: { id: p.teacherId }, data: { monthlySalary: eur(700) } });
 
     const single = await client.request("POST", "/payments/teacher-payouts/generate", {
       yearMonth: YM,
@@ -195,14 +196,14 @@ describe("liquidaciones de profesores", () => {
     expect(bulk.body.skippedWithPayments).toBeGreaterThanOrEqual(1);
 
     const after = await prisma.teacherPayout.findUniqueOrThrow({ where: { id: p.id } });
-    expect(after).toMatchObject({ amount: 1000, amountPaid: 800, status: "PARTIAL" });
+    expect(after).toMatchObject({ amount: eur(1000), amountPaid: eur(800), status: "PARTIAL" });
   });
 
   it("una liquidación sin pagos sí se recalcula", async () => {
     const p = await payoutFor(1000);
-    await prisma.teacher.update({ where: { id: p.teacherId }, data: { monthlySalary: 700 } });
+    await prisma.teacher.update({ where: { id: p.teacherId }, data: { monthlySalary: eur(700) } });
     await client.request("POST", "/payments/teacher-payouts/generate", { yearMonth: YM, teacherId: p.teacherId });
-    expect((await prisma.teacherPayout.findUniqueOrThrow({ where: { id: p.id } })).amount).toBe(700);
+    expect((await prisma.teacherPayout.findUniqueOrThrow({ where: { id: p.id } })).amount).toBe(eur(700));
   });
 
   it("filtra liquidaciones por fecha de pago usando el historial", async () => {

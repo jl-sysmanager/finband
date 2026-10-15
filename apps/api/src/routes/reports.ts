@@ -8,6 +8,7 @@ import {
   finalizeProfessionalPdf,
   formatEuro,
 } from "../lib/pdf-template.js";
+import { fromCents, toCents } from "../lib/money.js";
 import { prisma } from "../lib/prisma.js";
 import {
   reportDebtAging,
@@ -38,11 +39,12 @@ async function monthlyBalance(yearMonth: string) {
       _sum: { amount: true },
     }),
   ]);
+  // Sumas en céntimos; el informe devuelve euros.
   return {
-    income: income._sum.amount ?? 0,
-    expense: expense._sum.amount ?? 0,
-    feeCollections: fees._sum.amount ?? 0,
-    balance: (income._sum.amount ?? 0) - (expense._sum.amount ?? 0),
+    income: fromCents(income._sum.amount ?? 0),
+    expense: fromCents(expense._sum.amount ?? 0),
+    feeCollections: fromCents(fees._sum.amount ?? 0),
+    balance: fromCents((income._sum.amount ?? 0) - (expense._sum.amount ?? 0)),
   };
 }
 
@@ -122,19 +124,18 @@ export async function reportRoutes(app: FastifyInstance) {
   app.get("/balance-annual", async (request: FastifyRequest, reply: FastifyReply) => {
     const q = request.query as { year?: string; format?: string; inline?: string };
     const year = Number(q.year) || new Date().getFullYear();
-    const rows = [];
+    const rows: Array<{ month: string } & Awaited<ReturnType<typeof monthlyBalance>>> = [];
     for (let m = 1; m <= 12; m++) {
       const ym = `${year}-${String(m).padStart(2, "0")}`;
       rows.push({ month: ym, ...(await monthlyBalance(ym)) });
     }
-    const totals = rows.reduce(
-      (a, r) => ({
-        income: a.income + r.income,
-        expense: a.expense + r.expense,
-        balance: a.balance + r.balance,
-      }),
-      { income: 0, expense: 0, balance: 0 },
-    );
+    const sum = (pick: (r: (typeof rows)[number]) => number) =>
+      fromCents(rows.reduce((cents, r) => cents + toCents(pick(r)), 0));
+    const totals = {
+      income: sum((r) => r.income),
+      expense: sum((r) => r.expense),
+      balance: sum((r) => r.balance),
+    };
 
     if (q.format === "xlsx") {
       const wb = new ExcelJS.Workbook();
@@ -168,7 +169,9 @@ export async function reportRoutes(app: FastifyInstance) {
       cur.pending += f.totalAmount - f.amountPaid;
       map.set(key, cur);
     }
-    const rows = [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+    const rows = [...map.values()]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((r) => ({ ...r, paid: fromCents(r.paid), pending: fromCents(r.pending) }));
 
     if (q.format === "xlsx") {
       const wb = new ExcelJS.Workbook();
@@ -196,7 +199,9 @@ export async function reportRoutes(app: FastifyInstance) {
       cur.pending += p.amount - p.amountPaid;
       map.set(key, cur);
     }
-    const rows = [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+    const rows = [...map.values()]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((r) => ({ ...r, paid: fromCents(r.paid), pending: fromCents(r.pending) }));
 
     if (q.format === "xlsx") {
       const wb = new ExcelJS.Workbook();
@@ -219,7 +224,7 @@ export async function reportRoutes(app: FastifyInstance) {
     const rows = fees.map((f) => ({
       student: `${f.student.firstName} ${f.student.lastName}`,
       month: f.yearMonth,
-      pending: f.totalAmount - f.amountPaid,
+      pending: fromCents(f.totalAmount - f.amountPaid),
       status: f.status,
     }));
 
@@ -263,7 +268,7 @@ export async function reportRoutes(app: FastifyInstance) {
     if (q.format === "pdf") {
       const pdf = await pdfReport(
         "Evolución ingresos y gastos (12 meses)",
-        rows.map((r) => [r.month, r.income - r.expense]),
+        rows.map((r) => [r.month, r.balance]),
       );
       const inline = q.inline === "1" || q.inline === "true";
       return sendPdf(reply, "evolucion.pdf", pdf, inline);

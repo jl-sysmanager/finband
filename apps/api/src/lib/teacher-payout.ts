@@ -4,7 +4,7 @@ import {
   scheduleTotalsInRange,
 } from "./schedule-occurrences.js";
 import { localIsoDate } from "./dates.js";
-import { roundMoney, sumMoney } from "./money.js";
+import { roundCents } from "./money.js";
 import { prisma } from "./prisma.js";
 
 export type PayoutBasis =
@@ -14,6 +14,7 @@ export type PayoutBasis =
   | "hourlyWeeklyEstimate"
   | "none";
 
+/** Importes en céntimos. */
 export type PayoutCalculation = {
   baseAmount: number;
   transportAmount: number;
@@ -74,6 +75,7 @@ export async function scheduleTotalsForMonth(
   return scheduleTotalsInRange(from, to, groups, cancelled);
 }
 
+/** Base de la liquidación en céntimos a partir de las tarifas del profesor (en céntimos). */
 export function computeBaseFromTeacherConfig(
   teacher: {
     monthlySalary: number | null;
@@ -86,7 +88,7 @@ export function computeBaseFromTeacherConfig(
 ): { baseAmount: number; basis: PayoutBasis } {
   const salary = teacher.monthlySalary ?? 0;
   if (salary > 0) {
-    return { baseAmount: roundMoney(salary), basis: "monthlySalary" };
+    return { baseAmount: salary, basis: "monthlySalary" };
   }
 
   const perClass = teacher.costPerClass ?? 0;
@@ -95,20 +97,20 @@ export function computeBaseFromTeacherConfig(
       schedule.sessionCount > 0
         ? schedule.sessionCount * perClass
         : schedule.classCount * perClass * 4;
-    return { baseAmount: roundMoney(baseAmount), basis: "costPerClass" };
+    return { baseAmount, basis: "costPerClass" };
   }
 
   if (teacher.hourlyRate > 0) {
     if (schedule.totalHours > 0) {
       return {
-        baseAmount: roundMoney(schedule.totalHours * teacher.hourlyRate),
+        baseAmount: roundCents(schedule.totalHours * teacher.hourlyRate),
         basis: "hourlyRate",
       };
     }
     const weekly = teacher.weeklyHours ?? 0;
     if (weekly > 0) {
       return {
-        baseAmount: roundMoney(teacher.hourlyRate * weekly * weeksInMonth(yearMonth)),
+        baseAmount: roundCents(teacher.hourlyRate * weekly * weeksInMonth(yearMonth)),
         basis: "hourlyWeeklyEstimate",
       };
     }
@@ -136,8 +138,8 @@ export async function calculateTeacherPayout(
   const schedule = await scheduleTotalsForMonth(teacher.classGroups, yearMonth, teacherId);
   const { baseAmount, basis } = computeBaseFromTeacherConfig(teacher, schedule, yearMonth);
 
-  const transportAmount = roundMoney((teacher.transportCostPerDay ?? 0) * schedule.workDays);
-  const amount = sumMoney([baseAmount, transportAmount]);
+  const transportAmount = teacher.transportCostPerDay * schedule.workDays;
+  const amount = baseAmount + transportAmount;
 
   return {
     baseAmount,

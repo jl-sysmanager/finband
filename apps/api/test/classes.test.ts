@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { adminClient, createTeacher, prisma, resetDb, type TestClient } from "./helpers.js";
+import { adminClient, createTeacher, eur, prisma, resetDb, type TestClient } from "./helpers.js";
 
 let client: TestClient;
 beforeAll(async () => {
@@ -11,7 +11,7 @@ afterAll(() => client.close());
 const base = { type: "INDIVIDUAL", durationMinutes: 60, maxStudents: 1 };
 
 it("editar el horario conserva las suspensiones de las franjas que no cambian", async () => {
-  const teacher = await createTeacher({ costPerClass: 20 });
+  const teacher = await createTeacher({ costPerClass: eur(20) });
   const created = await client.request("POST", "/classes", {
     ...base,
     name: "Piano",
@@ -55,7 +55,7 @@ it("editar una clase inexistente devuelve 404", async () => {
 });
 
 it("borrar una clase la oculta, cierra matrículas y conserva lo trabajado en las liquidaciones", async () => {
-  const teacher = await createTeacher({ costPerClass: 25 });
+  const teacher = await createTeacher({ costPerClass: eur(25) });
   const created = await client.request("POST", "/classes", {
     ...base,
     name: "Guitarra",
@@ -65,7 +65,7 @@ it("borrar una clase la oculta, cierra matrículas y conserva lo trabajado en la
   const classId = created.body.id;
   const student = await prisma.student.create({ data: { firstName: "Ana", lastName: "Ruiz" } });
   await client.request("POST", `/classes/${classId}/enrollments`, { studentId: student.id });
-  await prisma.tariffRule.create({ data: { name: "Individual", classType: "INDIVIDUAL", amount: 50 } });
+  await prisma.tariffRule.create({ data: { name: "Individual", classType: "INDIVIDUAL", amount: eur(50) } });
   expect((await client.request("GET", `/students/${student.id}/fee-preview?yearMonth=2026-10`)).body.totalAmount).toBe(50);
 
   expect((await client.request("DELETE", `/classes/${classId}`)).status).toBe(200);
