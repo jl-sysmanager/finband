@@ -194,7 +194,17 @@ export const attendanceRecordSchema = z.object({
 
 export const generateMonthSchema = z.object({
   yearMonth: z.string().regex(/^\d{4}-\d{2}$/),
+  /** Solo estos alumnos (selección explícita). Sin lista: todos los que se puedan. */
+  studentIds: z.array(z.string().min(1)).max(2000).optional(),
   excludeStudentIds: z.array(z.string().min(1)).optional(),
+});
+
+export const generatePayoutsSchema = z.object({
+  yearMonth: z.string().regex(/^\d{4}-\d{2}$/),
+  /** Un único profesor (desde su ficha): responde 409 si su liquidación ya tiene pagos. */
+  teacherId: z.string().min(1).optional(),
+  /** Solo estos profesores (selección explícita). Sin lista: todos los activos. */
+  teacherIds: z.array(z.string().min(1)).max(500).optional(),
 });
 
 export const generateMonthPreviewSchema = z.object({

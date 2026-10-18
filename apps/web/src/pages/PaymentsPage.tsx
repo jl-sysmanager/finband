@@ -5,6 +5,7 @@ import { EntityDetailSheet } from "@/components/layout/EntityDetailSheet";
 import { StudentFeeDetailPanel, type StudentFeeRow } from "@/components/detail/StudentFeeDetailPanel";
 import { TeacherPayoutDetailPanel, type PayoutRow } from "@/components/detail/TeacherPayoutDetailPanel";
 import { BulkFeeGenerateDialog } from "@/components/fees/BulkFeeGenerateDialog";
+import { BulkPayoutGenerateDialog } from "@/components/payouts/BulkPayoutGenerateDialog";
 import { useMemo, useState } from "react";
 import { CollapsibleSection } from "@/components/list/CollapsibleSection";
 import { TablePagination } from "@/components/list/TablePagination";
@@ -72,6 +73,7 @@ export function PaymentsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [payOpen, setPayOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [payoutBulkOpen, setPayoutBulkOpen] = useState(false);
   const [selectedFeeId, setSelectedFeeId] = useState<string | null>(null);
   const [selectedPayoutId, setSelectedPayoutId] = useState<string | null>(null);
   const { confirm, dialog: confirmDialog } = useConfirm();
@@ -120,15 +122,6 @@ export function PaymentsPage() {
     },
   });
 
-  const genPayouts = useMutation({
-    mutationFn: () =>
-      api("/payments/teacher-payouts/generate", {
-        method: "POST",
-        body: JSON.stringify({ yearMonth: monthTo }),
-      }),
-    onSuccess: () => invalidateFinanceQueries(qc),
-  });
-
   const feeRows = fees.data ?? [];
   const feePagination = usePagination(feeRows, 10, feeQuery);
   const payoutPagination = usePagination(payouts.data ?? [], 10, payoutQuery);
@@ -169,13 +162,8 @@ export function PaymentsPage() {
                 </Button>
               </>
             ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={genPayouts.isPending}
-                onClick={() => genPayouts.mutate()}
-              >
-                Generar liquidaciones ({monthTo})
+              <Button size="sm" variant="outline" onClick={() => setPayoutBulkOpen(true)}>
+                <Layers className="h-4 w-4" /> Generar liquidaciones
               </Button>
             )}
           </div>
@@ -224,7 +212,14 @@ export function PaymentsPage() {
         ) : null}
       </EntityDetailSheet>
       {isAdmin ? (
-        <BulkFeeGenerateDialog open={bulkOpen} onOpenChange={setBulkOpen} defaultMonth={monthTo} />
+        <>
+          <BulkFeeGenerateDialog open={bulkOpen} onOpenChange={setBulkOpen} defaultMonth={monthTo} />
+          <BulkPayoutGenerateDialog
+            open={payoutBulkOpen}
+            onOpenChange={setPayoutBulkOpen}
+            defaultMonth={monthTo}
+          />
+        </>
       ) : null}
       {deleteError ? (
         <Alert variant="destructive">

@@ -1,7 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { BulkFeeGenerateDialog } from "@/components/fees/BulkFeeGenerateDialog";
+import { BulkPayoutGenerateDialog } from "@/components/payouts/BulkPayoutGenerateDialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -10,10 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ApiError, api } from "@/lib/api";
-import { invalidateFinanceQueries } from "@/lib/query-invalidation";
+import { api } from "@/lib/api";
 import { currentYearMonth, formatMoney } from "@/lib/utils";
-import { toast } from "@/stores/toast";
 import { Link } from "react-router-dom";
 
 type ActionItems = {
@@ -29,10 +28,10 @@ type Props = {
 };
 
 export function MonthCloseWizard({ open, onOpenChange }: Props) {
-  const qc = useQueryClient();
   const ym = currentYearMonth();
   const [step, setStep] = useState(0);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [payoutBulkOpen, setPayoutBulkOpen] = useState(false);
 
   const actions = useQuery({
     queryKey: ["dashboard-action-items", ym],
@@ -40,25 +39,6 @@ export function MonthCloseWizard({ open, onOpenChange }: Props) {
     enabled: open,
   });
 
-  const genPayouts = useMutation({
-    mutationFn: () =>
-      api<{ generated: number; skippedWithPayments?: number; yearMonth: string }>(
-        "/payments/teacher-payouts/generate",
-        {
-          method: "POST",
-          body: JSON.stringify({ yearMonth: ym }),
-        },
-      ),
-    onSuccess: (data) => {
-      const kept = data.skippedWithPayments
-        ? ` · ${data.skippedWithPayments} con pagos sin recalcular`
-        : "";
-      toast(`Liquidaciones: ${data.generated} generada(s)${kept}`, "success");
-      invalidateFinanceQueries(qc);
-    },
-    onError: (err) =>
-      toast(err instanceof ApiError ? err.message : "Error al generar liquidaciones", "error"),
-  });
 
   const a = actions.data;
   const steps = [
@@ -86,7 +66,7 @@ export function MonthCloseWizard({ open, onOpenChange }: Props) {
       title: "Liquidaciones profesores",
       body: `${a?.pendingPayouts.count ?? "…"} pendiente(s) · ${formatMoney(a?.pendingPayouts.totalPending ?? 0)}`,
       action: (
-        <Button size="sm" disabled={genPayouts.isPending} onClick={() => genPayouts.mutate()}>
+        <Button size="sm" onClick={() => setPayoutBulkOpen(true)}>
           Generar liquidaciones
         </Button>
       ),
@@ -109,6 +89,7 @@ export function MonthCloseWizard({ open, onOpenChange }: Props) {
   return (
     <>
       <BulkFeeGenerateDialog open={bulkOpen} onOpenChange={setBulkOpen} defaultMonth={ym} />
+      <BulkPayoutGenerateDialog open={payoutBulkOpen} onOpenChange={setPayoutBulkOpen} defaultMonth={ym} />
       <Dialog
         open={open}
         onOpenChange={(o) => {

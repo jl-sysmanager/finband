@@ -1,8 +1,9 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { GraduationCap, Plus } from "lucide-react";
+import { GraduationCap, Plus, Layers } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { StudentQuickPanel } from "@/components/detail/StudentQuickPanel";
+import { BulkFeeGenerateDialog } from "@/components/fees/BulkFeeGenerateDialog";
 import { EntityDetailSheet } from "@/components/layout/EntityDetailSheet";
 import { ListPageLayout } from "@/components/layout/ListPageLayout";
 import { QueryState } from "@/components/layout/QueryState";
@@ -41,6 +42,7 @@ export function StudentsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
   const { dialog: confirmDialog } = useConfirm();
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   const debouncedSearch = useDebouncedValue(search.trim());
 
@@ -67,6 +69,7 @@ export function StudentsPage() {
   return (
     <>
       {confirmDialog}
+      {isAdmin ? <BulkFeeGenerateDialog open={bulkOpen} onOpenChange={setBulkOpen} /> : null}
 
       <EntityDetailSheet
         open={!!selectedId}
@@ -87,11 +90,16 @@ export function StudentsPage() {
         description={`${q.data?.total ?? 0} registrados`}
         actions={
           isAdmin ? (
-            <Button asChild size="sm">
-              <Link to="/alumnos/nuevo">
-                <Plus className="h-4 w-4" /> Nuevo alumno
-              </Link>
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)}>
+                <Layers className="h-4 w-4" /> Generar cuotas
+              </Button>
+              <Button asChild size="sm">
+                <Link to="/alumnos/nuevo">
+                  <Plus className="h-4 w-4" /> Nuevo alumno
+                </Link>
+              </Button>
+            </div>
           ) : null
         }
         toolbar={
