@@ -1,3 +1,4 @@
+import { PAY_METHOD_LABELS, PAY_METHODS, PAY_RATE_UNITS, type PayMethod } from "@finband/shared";
 import { useId, useState, type ReactNode } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
@@ -22,32 +23,28 @@ export type TeacherData = {
   phone?: string | null;
   email?: string | null;
   specialty?: string | null;
-  hourlyRate: number;
-  monthlySalary?: number | null;
-  costPerClass?: number | null;
-  weeklyHours?: number | null;
+  payMethod: PayMethod;
+  payRate: number;
   transportCostPerDay: number;
   classGroups?: Array<{ name: string }>;
   payouts?: TeacherPayoutSummary[];
 };
 
-type FieldName = Exclude<keyof TeacherData, "id" | "classGroups" | "payouts">;
+type FieldName = "firstName" | "lastName" | "phone" | "email" | "specialty";
 
-const FIELDS: Array<{ name: FieldName; label: string; type?: "number" | "email" | "tel" }> = [
+const FIELDS: Array<{ name: FieldName; label: string; type?: "email" | "tel" }> = [
   { name: "firstName", label: "Nombre" },
   { name: "lastName", label: "Apellidos" },
   { name: "phone", label: "Teléfono", type: "tel" },
   { name: "email", label: "Email", type: "email" },
   { name: "specialty", label: "Especialidad" },
-  { name: "hourlyRate", label: "Precio por hora (€)", type: "number" },
-  { name: "monthlySalary", label: "Salario mensual (€)", type: "number" },
-  { name: "costPerClass", label: "Coste por clase (€)", type: "number" },
-  { name: "weeklyHours", label: "Horas semanales", type: "number" },
-  { name: "transportCostPerDay", label: "Transporte por jornada (€)", type: "number" },
 ];
 
-/** Campos numéricos obligatorios en la API: vacíos valen 0, no null. */
-const ZERO_WHEN_EMPTY = new Set<FieldName>(["hourlyRate", "transportCostPerDay"]);
+const METHOD_HELP: Record<PayMethod, string> = {
+  MONTHLY_SALARY: "Importe fijo cada mes, con independencia de las clases.",
+  HOURLY: "Se multiplica por las horas de sus clases en el horario del mes.",
+  PER_CLASS: "Se multiplica por las sesiones de sus clases en el horario del mes.",
+};
 
 /** Formulario de profesor compartido por la ficha y el panel lateral. */
 export function TeacherForm({
@@ -67,6 +64,7 @@ export function TeacherForm({
 }) {
   const uid = useId();
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [payMethod, setPayMethod] = useState<PayMethod>(teacher?.payMethod ?? "HOURLY");
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -74,11 +72,12 @@ export function TeacherForm({
     setSaveError(null);
     const fd = new FormData(e.currentTarget);
     const body: Record<string, unknown> = {};
-    for (const { name, type } of FIELDS) {
-      const v = String(fd.get(name) ?? "").trim();
-      if (type === "number") body[name] = v ? Number(v) : ZERO_WHEN_EMPTY.has(name) ? 0 : null;
-      else body[name] = v || null;
+    for (const { name } of FIELDS) {
+      body[name] = String(fd.get(name) ?? "").trim() || null;
     }
+    body.payMethod = payMethod;
+    body.payRate = Number(fd.get("payRate") || 0);
+    body.transportCostPerDay = Number(fd.get("transportCostPerDay") || 0);
     try {
       await onSubmit(body);
     } catch (err) {
@@ -96,15 +95,69 @@ export function TeacherForm({
               id={`${uid}-${name}`}
               name={name}
               type={type ?? "text"}
-              step={type === "number" ? (name === "weeklyHours" ? "0.5" : "0.01") : undefined}
-              min={type === "number" ? 0 : undefined}
               required={name === "firstName" || name === "lastName"}
-              defaultValue={(teacher?.[name] as string | number | null | undefined) ?? ""}
+              defaultValue={teacher?.[name] ?? ""}
               disabled={!isAdmin}
             />
           </div>
         ))}
       </div>
+
+      <fieldset className="space-y-3 rounded-lg border border-border p-3">
+        <legend className="px-1 text-sm font-medium">Honorarios</legend>
+        <div role="radiogroup" aria-label="Método de cálculo" className="grid gap-2 sm:grid-cols-3">
+          {PAY_METHODS.map((m) => (
+            <label
+              key={m}
+              className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm ${
+                payMethod === m ? "border-primary bg-primary/5 font-medium" : "border-border"
+              } ${!isAdmin ? "cursor-default opacity-70" : ""}`}
+            >
+              <input
+                type="radio"
+                name="payMethod"
+                value={m}
+                checked={payMethod === m}
+                disabled={!isAdmin}
+                onChange={() => setPayMethod(m)}
+                className="accent-primary"
+              />
+              {PAY_METHOD_LABELS[m]}
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">{METHOD_HELP[payMethod]}</p>
+        <div className={compact ? "grid gap-3 sm:grid-cols-2" : "grid gap-4 md:grid-cols-2"}>
+          <div className="space-y-1">
+            <Label htmlFor={`${uid}-payRate`}>
+              {PAY_METHOD_LABELS[payMethod]} ({PAY_RATE_UNITS[payMethod]})
+            </Label>
+            <Input
+              id={`${uid}-payRate`}
+              name="payRate"
+              type="number"
+              step="0.01"
+              min={0}
+              required
+              defaultValue={teacher?.payRate ?? ""}
+              disabled={!isAdmin}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor={`${uid}-transportCostPerDay`}>Transporte por jornada (€)</Label>
+            <Input
+              id={`${uid}-transportCostPerDay`}
+              name="transportCostPerDay"
+              type="number"
+              step="0.01"
+              min={0}
+              defaultValue={teacher?.transportCostPerDay ?? ""}
+              disabled={!isAdmin}
+            />
+            <p className="text-xs text-muted-foreground">Por cada día del mes con alguna clase.</p>
+          </div>
+        </div>
+      </fieldset>
       {saveError ? (
         <Alert variant="destructive">
           <AlertDescription>{saveError}</AlertDescription>

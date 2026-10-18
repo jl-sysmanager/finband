@@ -11,7 +11,7 @@ afterAll(() => client.close());
 const base = { type: "INDIVIDUAL", durationMinutes: 60, maxStudents: 1 };
 
 it("editar el horario conserva las suspensiones de las franjas que no cambian", async () => {
-  const teacher = await createTeacher({ costPerClass: eur(20) });
+  const teacher = await createTeacher({ payMethod: "PER_CLASS", payRate: eur(20) });
   const created = await client.request("POST", "/classes", {
     ...base,
     name: "Piano",
@@ -55,7 +55,7 @@ it("editar una clase inexistente devuelve 404", async () => {
 });
 
 it("borrar una clase la oculta, cierra matrículas y conserva lo trabajado en las liquidaciones", async () => {
-  const teacher = await createTeacher({ costPerClass: eur(25) });
+  const teacher = await createTeacher({ payMethod: "PER_CLASS", payRate: eur(25) });
   const created = await client.request("POST", "/classes", {
     ...base,
     name: "Guitarra",
@@ -84,4 +84,32 @@ it("borrar una clase la oculta, cierra matrículas y conserva lo trabajado en la
   expect((await calc("2026-10")).body).toMatchObject({ sessionCount: 2, baseAmount: 50 });
   expect((await calc("2026-11")).body).toMatchObject({ sessionCount: 0, baseAmount: 0 });
   expect(await prisma.classScheduleSlot.count({ where: { classGroupId: classId } })).toBe(1);
+});
+
+it("la fecha de inicio de la clase limita las sesiones liquidadas y se puede corregir", async () => {
+  const teacher = await createTeacher({ payMethod: "PER_CLASS", payRate: eur(30), transportCostPerDay: eur(2) });
+  const created = await client.request("POST", "/classes", {
+    ...base,
+    name: "Violín",
+    teacherId: teacher.id,
+    startDate: "2026-10-14",
+    scheduleSlots: [{ dayOfWeek: 1, startTime: "17:00", endTime: "18:00" }],
+  });
+  expect(created.status).toBe(200);
+  const calc = (ym: string) =>
+    client.request("GET", `/payments/teacher-payouts/calculate?teacherId=${teacher.id}&yearMonth=${ym}`);
+
+  // Desde el 14: lunes 19 y 26.
+  const oct = await calc("2026-10");
+  expect(oct.body).toMatchObject({ payMethod: "PER_CLASS", payRate: 30, sessionCount: 2, baseAmount: 60, workDays: 2, transportAmount: 4 });
+  expect(oct.body.classes).toEqual([
+    expect.objectContaining({ name: "Violín", sessions: 2, minutes: 120, amount: 60 }),
+  ]);
+  expect((await calc("2026-09")).body).toMatchObject({ sessionCount: 0, baseAmount: 0 });
+
+  // Si en realidad empezó el 1 de octubre, se corrige la fecha y se recalcula.
+  await client.request("PATCH", `/classes/${created.body.id}`, { startDate: "2026-10-01" });
+  expect((await calc("2026-10")).body).toMatchObject({ sessionCount: 4, baseAmount: 120 });
+  await client.request("PATCH", `/classes/${created.body.id}`, { startDate: null });
+  expect((await calc("2026-09")).body.sessionCount).toBe(4); // sin fecha: cuenta todo el mes
 });

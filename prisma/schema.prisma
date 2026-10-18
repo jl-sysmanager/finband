@@ -43,6 +43,12 @@ enum DiscountType {
   FIXED
 }
 
+enum PayMethod {
+  MONTHLY_SALARY
+  HOURLY
+  PER_CLASS
+}
+
 enum PayoutStatus {
   PENDING
   PARTIAL
@@ -112,10 +118,11 @@ model Teacher {
   phone               String?
   email               String?
   specialty           String?
-  hourlyRate          Int             @default(0)
-  monthlySalary       Int?
-  costPerClass        Int?
-  weeklyHours         Float?
+  /// Un único método de cálculo de honorarios; `payRate` es su tarifa en céntimos
+  /// (€/mes, €/hora o €/clase según el método).
+  payMethod           PayMethod       @default(HOURLY)
+  payRate             Int             @default(0)
+  /// Se suma por cada día con al menos una clase en el horario.
   transportCostPerDay Int             @default(0)
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
@@ -161,6 +168,9 @@ model ClassGroup {
   durationMinutes Int                 @default(60)
   maxStudents     Int                 @default(1)
   notes           String?
+  /// Primer día en que se imparte (fecha de calendario). Las liquidaciones cuentan
+  /// sus sesiones desde ese día; vacío = sin restricción (clases ya existentes).
+  startDate       DateTime?
   /// Borrado lógico: la clase deja de existir para el futuro, pero sigue
   /// contando en las liquidaciones de los días en que se impartió.
   deletedAt       DateTime?

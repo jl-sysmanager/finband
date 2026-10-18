@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Users } from "lucide-react";
+import { Layers, Plus, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { TeacherQuickPanel } from "@/components/detail/TeacherQuickPanel";
@@ -18,7 +18,9 @@ import {
 import { ListToolbar } from "@/components/list/ListToolbar";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import { BulkPayoutGenerateDialog } from "@/components/payouts/BulkPayoutGenerateDialog";
 import { formatMoney } from "@/lib/utils";
+import { PAY_RATE_UNITS, type PayMethod } from "@finband/shared";
 import { useAuth } from "@/stores/auth";
 
 type TeacherRow = {
@@ -26,12 +28,14 @@ type TeacherRow = {
   firstName: string;
   lastName: string;
   specialty?: string;
-  hourlyRate: number;
+  payMethod: PayMethod;
+  payRate: number;
   classGroups: unknown[];
 };
 
 export function TeachersPage() {
   const [search, setSearch] = useState("");
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const isAdmin = useAuth((s) => s.user?.role === "ADMIN");
 
@@ -58,6 +62,7 @@ export function TeachersPage() {
 
   return (
     <>
+      {isAdmin ? <BulkPayoutGenerateDialog open={bulkOpen} onOpenChange={setBulkOpen} /> : null}
       <EntityDetailSheet
         open={!!selectedId}
         onOpenChange={(o) => !o && setSelectedId(null)}
@@ -86,11 +91,16 @@ export function TeachersPage() {
         }
         actions={
           isAdmin ? (
-            <Button asChild size="sm">
-              <Link to="/profesores/nuevo">
-                <Plus className="h-4 w-4" /> Nuevo profesor
-              </Link>
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)}>
+                <Layers className="h-4 w-4" /> Generar liquidaciones
+              </Button>
+              <Button asChild size="sm">
+                <Link to="/profesores/nuevo">
+                  <Plus className="h-4 w-4" /> Nuevo profesor
+                </Link>
+              </Button>
+            </div>
           ) : null
         }
         toolbar={
@@ -113,7 +123,7 @@ export function TeachersPage() {
               <DataTableHead>
                 <DataTableTh>Nombre</DataTableTh>
                 <DataTableTh>Especialidad</DataTableTh>
-                <DataTableTh>€/hora</DataTableTh>
+                <DataTableTh>Honorarios</DataTableTh>
                 <DataTableTh>Clases</DataTableTh>
               </DataTableHead>
               <tbody>
@@ -127,7 +137,9 @@ export function TeachersPage() {
                       {t.lastName}, {t.firstName}
                     </DataTableTd>
                     <DataTableTd>{t.specialty ?? "—"}</DataTableTd>
-                    <DataTableTd>{formatMoney(t.hourlyRate)}</DataTableTd>
+                    <DataTableTd>
+                      {formatMoney(t.payRate)} {PAY_RATE_UNITS[t.payMethod].replace("€", "").trim()}
+                    </DataTableTd>
                     <DataTableTd>{t.classGroups?.length ?? 0}</DataTableTd>
                   </DataTableRow>
                 ))}

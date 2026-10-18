@@ -120,7 +120,7 @@ describe("cobros de cuotas", () => {
 
 describe("liquidaciones de profesores", () => {
   async function payoutFor(monthlySalary: number) {
-    const t = await createTeacher({ monthlySalary: eur(monthlySalary) });
+    const t = await createTeacher({ payMethod: "MONTHLY_SALARY", payRate: eur(monthlySalary) });
     const gen = await client.request("POST", "/payments/teacher-payouts/generate", {
       yearMonth: YM,
       teacherId: t.id,
@@ -185,7 +185,7 @@ describe("liquidaciones de profesores", () => {
   it("una liquidación con pagos no se recalcula", async () => {
     const p = await payoutFor(1000);
     await payPayout(p.id, 800);
-    await prisma.teacher.update({ where: { id: p.teacherId }, data: { monthlySalary: eur(700) } });
+    await prisma.teacher.update({ where: { id: p.teacherId }, data: { payRate: eur(700) } });
 
     const single = await client.request("POST", "/payments/teacher-payouts/generate", {
       yearMonth: YM,
@@ -201,7 +201,7 @@ describe("liquidaciones de profesores", () => {
 
   it("una liquidación sin pagos sí se recalcula", async () => {
     const p = await payoutFor(1000);
-    await prisma.teacher.update({ where: { id: p.teacherId }, data: { monthlySalary: eur(700) } });
+    await prisma.teacher.update({ where: { id: p.teacherId }, data: { payRate: eur(700) } });
     await client.request("POST", "/payments/teacher-payouts/generate", { yearMonth: YM, teacherId: p.teacherId });
     expect((await prisma.teacherPayout.findUniqueOrThrow({ where: { id: p.id } })).amount).toBe(eur(700));
   });

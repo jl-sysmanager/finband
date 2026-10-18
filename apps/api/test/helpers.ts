@@ -54,10 +54,13 @@ export async function createClass(
     type?: ClassType;
     durationMinutes?: number;
     slots?: Array<{ dayOfWeek: number; startTime: string; endTime: string }>;
+    /** Fecha de inicio de la clase (por defecto, sin restricción). */
+    startDate?: Date | null;
   } = {},
 ) {
   return prisma.classGroup.create({
     data: {
+      startDate: opts.startDate ?? null,
       name: `Clase ${uid()}`,
       type: opts.type ?? "INDIVIDUAL",
       teacherId,

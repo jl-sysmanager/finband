@@ -262,14 +262,18 @@ export async function previewFeesForMonth(yearMonth: string) {
 
 export async function generateFeesForMonth(
   yearMonth: string,
-  options?: { excludeStudentIds?: string[] },
+  options?: { studentIds?: string[]; excludeStudentIds?: string[] },
 ): Promise<{ generated: number; skipped: number }> {
   const exclude = new Set(options?.excludeStudentIds ?? []);
+  // Con selección explícita solo se tocan los alumnos elegidos: uno que pase a ser
+  // generable entre la vista previa y la confirmación no se incluye sin querer.
+  const only = options?.studentIds ? new Set(options.studentIds) : null;
   const preview = await computeFeePreview(yearMonth);
 
   let generated = 0;
   let skipped = 0;
   for (const row of preview.rows) {
+    if (only && !only.has(row.studentId)) continue;
     if (exclude.has(row.studentId)) {
       skipped++;
       continue;
@@ -287,5 +291,7 @@ export async function generateFeesForMonth(
       skipped++;
     }
   }
+  // Elegidos que ya no son alumnos activos (baja entre la vista previa y la confirmación).
+  if (only) skipped += [...only].filter((id) => !preview.rows.some((r) => r.studentId === id)).length;
   return { generated, skipped };
 }

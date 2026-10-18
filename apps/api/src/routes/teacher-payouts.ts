@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { teacherPayoutPaymentSchema } from "@finband/shared";
+import { generatePayoutsSchema, teacherPayoutPaymentSchema } from "@finband/shared";
 import { recordAudit } from "../lib/audit.js";
 import { instantRangeFilter, parseCalendarDate, yearMonthRangeFilter } from "../lib/dates.js";
 import { payoutStatus } from "../lib/fee-status.js";
@@ -144,11 +144,63 @@ export async function teacherPayoutRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post("/teacher-payouts/generate", async (request, reply) => {
-    const { yearMonth, teacherId } = request.body as { yearMonth?: string; teacherId?: string };
-    if (!yearMonth || !YEAR_MONTH.test(yearMonth)) {
-      return reply.status(400).send({ error: "yearMonth inválido (YYYY-MM)" });
+  /** Vista previa de la generación del mes: importe, sesiones y si se puede generar. */
+  app.post("/teacher-payouts/generate/preview", async (request, reply) => {
+    const parsed = generatePayoutsSchema.pick({ yearMonth: true }).safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
+    const { yearMonth } = parsed.data;
+    const [teachers, calcs, existing] = await Promise.all([
+      prisma.teacher.findMany({
+        where: { deletedAt: null },
+        select: { id: true, firstName: true, lastName: true },
+        orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      }),
+      calculateTeacherPayouts("active", yearMonth),
+      prisma.teacherPayout.findMany({
+        where: { yearMonth },
+        select: { id: true, teacherId: true, amountPaid: true, _count: { select: { payments: true } } },
+      }),
+    ]);
+    const byTeacher = new Map(existing.map((p) => [p.teacherId, p]));
+    const rows = teachers.map((t) => {
+      const calc = calcs.get(t.id)!;
+      const payout = byTeacher.get(t.id);
+      const issue: "ready" | "no_amount" | "has_payments" =
+        payout && payout._count.payments > 0 ? "has_payments" : calc.amount <= 0 ? "no_amount" : "ready";
+      return {
+        teacherId: t.id,
+        teacherName: `${t.lastName}, ${t.firstName}`,
+        payMethod: calc.payMethod,
+        sessionCount: calc.sessionCount,
+        amount: calc.amount,
+        issue,
+        existingPayoutId: payout?.id ?? null,
+        amountPaid: payout?.amountPaid ?? 0,
+        warnings: calc.warnings,
+      };
+    });
+    const ready = rows.filter((r) => r.issue === "ready");
+    return {
+      yearMonth,
+      rows,
+      summary: {
+        teachers: rows.length,
+        eligible: ready.length,
+        skippedNoAmount: rows.filter((r) => r.issue === "no_amount").length,
+        skippedHasPayments: rows.filter((r) => r.issue === "has_payments").length,
+        totalEligibleAmount: ready.reduce((t, r) => t + r.amount, 0),
+      },
+    };
+  });
+
+  app.post("/teacher-payouts/generate", async (request, reply) => {
+    const parsed = generatePayoutsSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "yearMonth inválido (YYYY-MM)", details: parsed.error.flatten() });
+    }
+    const { yearMonth, teacherId, teacherIds } = parsed.data;
     if (teacherId) {
       const teacher = await prisma.teacher.findFirst({ where: { id: teacherId, deletedAt: null } });
       if (!teacher) return reply.status(404).send({ error: "Profesor no encontrado" });
@@ -161,15 +213,31 @@ export async function teacherPayoutRoutes(app: FastifyInstance) {
       }
       return { generated: result === "generated" ? 1 : 0, yearMonth, amount };
     }
-    const calcs = await calculateTeacherPayouts("active", yearMonth);
+    // Con selección explícita solo se calculan los elegidos (y que sigan activos).
+    const ids = teacherIds
+      ? (
+          await prisma.teacher.findMany({
+            where: { id: { in: teacherIds }, deletedAt: null },
+            select: { id: true },
+          })
+        ).map((t) => t.id)
+      : "active";
+    const calcs = await calculateTeacherPayouts(ids, yearMonth);
     let generated = 0;
     let skippedWithPayments = 0;
+    let skippedNoAmount = teacherIds ? teacherIds.length - calcs.size : 0;
     for (const [id, calc] of calcs) {
       const { result } = await upsertTeacherPayout(id, yearMonth, calc);
       if (result === "generated") generated++;
       if (result === "has_payments") skippedWithPayments++;
+      if (result === "no_amount") skippedNoAmount++;
     }
-    return { generated, skippedWithPayments, yearMonth };
+    await recordAudit(request, {
+      action: "GENERATE_PAYOUTS",
+      entityType: "teacher_payout",
+      details: { yearMonth, generated, skippedWithPayments, skippedNoAmount, selected: teacherIds?.length ?? null },
+    });
+    return { generated, skippedWithPayments, skippedNoAmount, yearMonth };
   });
 
   app.post("/teacher-payouts/pay", async (request, reply) => {

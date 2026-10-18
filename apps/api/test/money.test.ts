@@ -44,23 +44,18 @@ describe("esquemas de entrada (euros → céntimos)", () => {
     expect(positiveAmountSchema.safeParse(0).success).toBe(false);
   });
 
-  it("convierte todas las tarifas del profesor y respeta los nulos", () => {
+  it("convierte la tarifa del profesor y el transporte a céntimos", () => {
     const t = teacherSchema.parse({
       firstName: "A",
       lastName: "B",
-      hourlyRate: 18.5,
-      monthlySalary: null,
-      costPerClass: 22.25,
+      payMethod: "PER_CLASS",
+      payRate: 22.25,
       transportCostPerDay: 6.5,
-      weeklyHours: 12.5,
     });
-    expect(t).toMatchObject({
-      hourlyRate: 1850,
-      monthlySalary: null,
-      costPerClass: 2225,
-      transportCostPerDay: 650,
-      weeklyHours: 12.5,
-    });
+    expect(t).toMatchObject({ payMethod: "PER_CLASS", payRate: 2225, transportCostPerDay: 650 });
+    expect(teacherSchema.safeParse({ firstName: "A", lastName: "B", payMethod: "OTRO", payRate: 1 }).success).toBe(
+      false,
+    );
   });
 
   it("el valor del descuento se guarda en centésimas de su unidad", () => {
@@ -83,7 +78,7 @@ describe("moneyToEuros (respuestas)", () => {
         { type: "PERCENT", value: 1250 },
         { type: "FIXED", value: 1500 },
       ],
-      teacher: { hourlyRate: 1850, weeklyHours: 12.5, transportCostPerDay: 650 },
+      teacher: { payMethod: "HOURLY", payRate: 1850, transportCostPerDay: 650 },
       _count: { payments: 1 },
     });
     expect(out).toEqual({
@@ -97,7 +92,7 @@ describe("moneyToEuros (respuestas)", () => {
         { type: "PERCENT", value: 12.5 },
         { type: "FIXED", value: 15 },
       ],
-      teacher: { hourlyRate: 18.5, weeklyHours: 12.5, transportCostPerDay: 6.5 },
+      teacher: { payMethod: "HOURLY", payRate: 18.5, transportCostPerDay: 6.5 },
       _count: { payments: 1 },
     });
     expect(out.payments[0]!.paidAt).toBeInstanceOf(Date);

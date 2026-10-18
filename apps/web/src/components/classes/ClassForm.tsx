@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, api } from "@/lib/api";
 import { invalidateClassQueries } from "@/lib/query-invalidation";
-import { cn } from "@/lib/utils";
+import { cn, todayISO } from "@/lib/utils";
 
 export type EnrolledStudent = { id: string; firstName: string; lastName: string };
 
@@ -26,6 +26,8 @@ export type ClassData = {
   durationMinutes: number;
   maxStudents: number;
   notes?: string | null;
+  /** Primer día de clase (fecha de calendario); null = sin restricción. */
+  startDate?: string | null;
   scheduleSlots?: ScheduleSlotDraft[];
   enrollments?: Array<{ student: EnrolledStudent }>;
 };
@@ -74,6 +76,7 @@ export function ClassForm({
     fd.forEach((v, k) => {
       body[k] = k === "durationMinutes" || k === "maxStudents" ? Number(v) : v;
     });
+    body.startDate = (fd.get("startDate") as string) || null;
     try {
       await onSubmit(body);
     } catch (err) {
@@ -143,6 +146,20 @@ export function ClassForm({
             defaultValue={cls?.maxStudents ?? 1}
             disabled={!isAdmin}
           />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={field("startDate")}>Fecha de inicio</Label>
+          <Input
+            id={field("startDate")}
+            name="startDate"
+            type="date"
+            // Clase nueva: hoy. Clase existente sin fecha: vacío = cuenta el mes completo.
+            defaultValue={cls ? (cls.startDate?.slice(0, 10) ?? "") : todayISO()}
+            disabled={!isAdmin}
+          />
+          <p className="text-xs text-muted-foreground">
+            Las liquidaciones cuentan sus sesiones desde este día.
+          </p>
         </div>
         <div className={compact ? "sm:col-span-2" : "md:col-span-2"}>
           <WeeklyScheduleEditor value={scheduleSlots} onChange={setScheduleSlots} disabled={!isAdmin} />

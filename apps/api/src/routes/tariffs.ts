@@ -93,6 +93,7 @@ export async function tariffRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
     const { generated, skipped } = await generateFeesForMonth(parsed.data.yearMonth, {
+      studentIds: parsed.data.studentIds,
       excludeStudentIds: parsed.data.excludeStudentIds,
     });
     await recordAudit(request, {
@@ -102,6 +103,7 @@ export async function tariffRoutes(app: FastifyInstance) {
         yearMonth: parsed.data.yearMonth,
         generated,
         skipped,
+        selected: parsed.data.studentIds?.length ?? null,
         excluded: parsed.data.excludeStudentIds?.length ?? 0,
       },
     });

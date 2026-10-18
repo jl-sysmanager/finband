@@ -195,9 +195,11 @@ export async function classRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
-    const { scheduleSlots, ...data } = parsed.data;
+    const { scheduleSlots, startDate, ...data } = parsed.data;
     const created = await prisma.$transaction(async (tx) => {
-      const group = await tx.classGroup.create({ data });
+      const group = await tx.classGroup.create({
+        data: { ...data, startDate: startDate ? parseCalendarDate(startDate) : null },
+      });
       await replaceScheduleSlots(tx, group.id, scheduleSlots);
       return tx.classGroup.findUniqueOrThrow({
         where: { id: group.id },
@@ -219,14 +221,22 @@ export async function classRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
     }
-    const { scheduleSlots, ...data } = parsed.data;
+    const { scheduleSlots, startDate, ...data } = parsed.data;
     const exists = await prisma.classGroup.findFirst({
       where: { id, deletedAt: null },
       select: { id: true },
     });
     if (!exists) return reply.status(404).send({ error: "Clase no encontrada" });
     const updated = await prisma.$transaction(async (tx) => {
-      await tx.classGroup.update({ where: { id }, data: stripSlots(data) });
+      await tx.classGroup.update({
+        where: { id },
+        data: {
+          ...stripSlots(data),
+          ...(startDate !== undefined
+            ? { startDate: startDate ? parseCalendarDate(startDate) : null }
+            : {}),
+        },
+      });
       await replaceScheduleSlots(tx, id, scheduleSlots as ScheduleSlotInput[] | undefined);
       return tx.classGroup.findUniqueOrThrow({
         where: { id },

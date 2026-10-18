@@ -33,6 +33,23 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   TARJETA: "Tarjeta",
 };
 
+/** Método de cálculo de los honorarios de un profesor (uno por profesor). */
+export const PAY_METHODS = ["MONTHLY_SALARY", "HOURLY", "PER_CLASS"] as const;
+export type PayMethod = (typeof PAY_METHODS)[number];
+
+export const PAY_METHOD_LABELS: Record<PayMethod, string> = {
+  MONTHLY_SALARY: "Salario mensual",
+  HOURLY: "Precio por hora",
+  PER_CLASS: "Coste por clase",
+};
+
+/** Unidad de la tarifa según el método. */
+export const PAY_RATE_UNITS: Record<PayMethod, string> = {
+  MONTHLY_SALARY: "€/mes",
+  HOURLY: "€/hora",
+  PER_CLASS: "€/clase",
+};
+
 export const FEE_STATUSES = ["PENDING", "PARTIAL", "PAID"] as const;
 export type FeeStatus = (typeof FEE_STATUSES)[number];
 

@@ -16,15 +16,14 @@ describe("contrato HTTP en euros", () => {
     const teacher = await client.request("POST", "/teachers", {
       firstName: "Ana",
       lastName: "Ruiz",
-      hourlyRate: 18.5,
-      costPerClass: 22.25,
+      payMethod: "PER_CLASS",
+      payRate: 22.25,
       transportCostPerDay: 6.5,
     });
     expect(teacher.status).toBe(200);
-    expect(teacher.body).toMatchObject({ hourlyRate: 18.5, costPerClass: 22.25, transportCostPerDay: 6.5 });
+    expect(teacher.body).toMatchObject({ payMethod: "PER_CLASS", payRate: 22.25, transportCostPerDay: 6.5 });
     expect(await prisma.teacher.findUniqueOrThrow({ where: { id: teacher.body.id } })).toMatchObject({
-      hourlyRate: 1850,
-      costPerClass: 2225,
+      payRate: 2225,
       transportCostPerDay: 650,
     });
 
@@ -35,9 +34,9 @@ describe("contrato HTTP en euros", () => {
       durationMinutes: 60,
       maxStudents: 1,
     });
-    expect(cls.body.teacher.hourlyRate).toBe(18.5);
+    expect(cls.body.teacher.payRate).toBe(22.25);
     const classDetail = await client.request("GET", `/classes/${cls.body.id}`);
-    expect(classDetail.body.teacher.hourlyRate).toBe(18.5);
+    expect(classDetail.body.teacher.payRate).toBe(22.25);
 
     const tariff = await client.request("POST", "/tariffs", { name: "Individual", classType: "INDIVIDUAL", amount: 47.35 });
     expect(tariff.body.amount).toBe(47.35);
@@ -140,8 +139,8 @@ describe("contrato HTTP en euros", () => {
     const t = await client.request("POST", "/teachers", {
       firstName: "Luis",
       lastName: "Gil",
-      hourlyRate: 0,
-      monthlySalary: 1200.5,
+      payMethod: "MONTHLY_SALARY",
+      payRate: 1200.5,
     });
     const gen = await client.request("POST", "/payments/teacher-payouts/generate", {
       yearMonth: YM,
