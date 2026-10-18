@@ -153,9 +153,10 @@ async function main() {
   menuBlock(
     doc,
     "Profesores",
-    "Datos del profesor y condiciones económicas (salario, coste por clase, transporte por jornada si aplica).",
+    "Datos del profesor y honorarios: un único método (salario mensual, precio por hora o coste por clase) con su tarifa, más el transporte por jornada si aplica.",
     [
       "Registrar profesores antes de asignarles clases.",
+      "Por hora o por clase, la liquidación sale de las sesiones del horario de sus clases (sin las suspendidas); el transporte, de los días con clase.",
       "Actualizar importes cuando cambie el acuerdo económico.",
       "Consultar liquidaciones pasadas en la ficha del profesor.",
     ],

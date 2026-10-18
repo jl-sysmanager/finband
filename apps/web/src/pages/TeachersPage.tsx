@@ -19,6 +19,7 @@ import { ListToolbar } from "@/components/list/ListToolbar";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { formatMoney } from "@/lib/utils";
+import { PAY_RATE_UNITS, type PayMethod } from "@finband/shared";
 import { useAuth } from "@/stores/auth";
 
 type TeacherRow = {
@@ -26,7 +27,8 @@ type TeacherRow = {
   firstName: string;
   lastName: string;
   specialty?: string;
-  hourlyRate: number;
+  payMethod: PayMethod;
+  payRate: number;
   classGroups: unknown[];
 };
 
@@ -113,7 +115,7 @@ export function TeachersPage() {
               <DataTableHead>
                 <DataTableTh>Nombre</DataTableTh>
                 <DataTableTh>Especialidad</DataTableTh>
-                <DataTableTh>€/hora</DataTableTh>
+                <DataTableTh>Honorarios</DataTableTh>
                 <DataTableTh>Clases</DataTableTh>
               </DataTableHead>
               <tbody>
@@ -127,7 +129,9 @@ export function TeachersPage() {
                       {t.lastName}, {t.firstName}
                     </DataTableTd>
                     <DataTableTd>{t.specialty ?? "—"}</DataTableTd>
-                    <DataTableTd>{formatMoney(t.hourlyRate)}</DataTableTd>
+                    <DataTableTd>
+                      {formatMoney(t.payRate)} {PAY_RATE_UNITS[t.payMethod].replace("€", "").trim()}
+                    </DataTableTd>
                     <DataTableTd>{t.classGroups?.length ?? 0}</DataTableTd>
                   </DataTableRow>
                 ))}

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { eurosToCents } from "./money.js";
 import {
   CLASS_TYPES,
+  PAY_METHODS,
   PAYMENT_METHODS,
   STUDENT_STATUSES,
   USER_ROLES,
@@ -77,10 +78,9 @@ export const teacherSchema = z.object({
   phone: z.string().optional().nullable(),
   email: z.string().email().optional().nullable().or(z.literal("")),
   specialty: z.string().optional().nullable(),
-  hourlyRate: nonNegativeAmountSchema,
-  monthlySalary: nonNegativeAmountSchema.optional().nullable(),
-  costPerClass: nonNegativeAmountSchema.optional().nullable(),
-  weeklyHours: z.number().min(0).optional().nullable(),
+  payMethod: z.enum(PAY_METHODS),
+  /** Tarifa del método elegido: €/mes, €/hora o €/clase. */
+  payRate: nonNegativeAmountSchema,
   transportCostPerDay: nonNegativeAmountSchema.optional(),
 });
 
@@ -121,6 +121,12 @@ export const classGroupSchema = z.object({
   durationMinutes: z.number().int().min(15),
   maxStudents: z.number().int().min(1),
   notes: z.string().optional().nullable(),
+  /** Primer día de clase ("YYYY-MM-DD"); null = sin restricción. */
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida (AAAA-MM-DD)")
+    .optional()
+    .nullable(),
 });
 
 export const tariffRuleSchema = z.object({

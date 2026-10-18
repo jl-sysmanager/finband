@@ -55,7 +55,7 @@ it("el balance suma cobros y resta pagos a profesores sin duplicar los apuntes m
       paidAt: "2026-10-06",
     })).status,
   ).toBe(200);
-  const t = await createTeacher({ monthlySalary: eur(500) });
+  const t = await createTeacher({ payMethod: "MONTHLY_SALARY", payRate: eur(500) });
   await client.request("POST", "/payments/teacher-payouts/generate", { yearMonth: YM, teacherId: t.id });
   const payout = await prisma.teacherPayout.findFirstOrThrow({ where: { teacherId: t.id } });
   expect(

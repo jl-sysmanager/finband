@@ -37,10 +37,14 @@ beforeAll(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "finband-money-migration-"));
   dbUrl = `file:${path.join(dir, "data.db")}`;
 
-  // 1. Base con todas las migraciones anteriores: importes en euros (REAL).
+  // 1. Base con las migraciones anteriores a la de céntimos: importes en euros (REAL).
   const before = path.join(dir, "migrations-before");
   fs.cpSync(path.join(repoRoot, "prisma/migrations"), before, { recursive: true });
-  fs.rmSync(path.join(before, MIGRATION), { recursive: true });
+  for (const name of fs.readdirSync(before)) {
+    if (name >= MIGRATION && name !== "migration_lock.toml") {
+      fs.rmSync(path.join(before, name), { recursive: true });
+    }
+  }
   migrateDeploy(before);
 
   db = new PrismaClient({ datasourceUrl: dbUrl });
@@ -72,7 +76,7 @@ beforeAll(async () => {
   ];
   for (const q of sql) await db.$executeRawUnsafe(q);
 
-  // 2. Se aplica la migración de céntimos.
+  // 2. Se aplican la migración de céntimos y todas las posteriores (como en producción).
   migrateDeploy(path.join(repoRoot, "prisma/migrations"));
 });
 
@@ -85,11 +89,13 @@ const raw = <T>(query: string) => db.$queryRawUnsafe<T[]>(query);
 
 describe(`migración ${MIGRATION}`, () => {
   it("convierte cada importe a céntimos enteros", async () => {
+    // Tras la migración de método único, cada profesor conserva el que se le aplicaba
+    // (salario si lo había, si no coste por clase, si no precio hora), en céntimos.
     expect(
-      await raw(`SELECT id, hourlyRate, monthlySalary, costPerClass, transportCostPerDay, weeklyHours FROM "Teacher" ORDER BY id`),
+      await raw(`SELECT id, payMethod, payRate, transportCostPerDay FROM "Teacher" ORDER BY id`),
     ).toEqual([
-      { id: "t1", hourlyRate: 1850, monthlySalary: null, costPerClass: 2225, transportCostPerDay: 650, weeklyHours: 12.5 },
-      { id: "t2", hourlyRate: 0, monthlySalary: 180010, costPerClass: null, transportCostPerDay: 0, weeklyHours: null },
+      { id: "t1", payMethod: "PER_CLASS", payRate: 2225, transportCostPerDay: 650 },
+      { id: "t2", payMethod: "MONTHLY_SALARY", payRate: 180010, transportCostPerDay: 0 },
     ]);
     expect(await raw(`SELECT id, monthlyFee FROM "Student" ORDER BY id`)).toEqual([
       { id: "s1", monthlyFee: 4735 },
@@ -168,6 +174,6 @@ describe(`migración ${MIGRATION}`, () => {
       payments: [{ amount: 10.1 }, { amount: 10.1 }, { amount: 10.1 }],
     });
     const teacher = await db.teacher.findUniqueOrThrow({ where: { id: "t1" } });
-    expect(moneyToEuros(teacher)).toMatchObject({ hourlyRate: 18.5, costPerClass: 22.25, transportCostPerDay: 6.5 });
+    expect(moneyToEuros(teacher)).toMatchObject({ payMethod: "PER_CLASS", payRate: 22.25, transportCostPerDay: 6.5 });
   });
 });

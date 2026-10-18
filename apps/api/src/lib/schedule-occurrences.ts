@@ -55,12 +55,15 @@ export function mondayOfWeek(referenceIso: string): string {
   return addDaysIso(referenceIso, -(dow - 1));
 }
 
-function slotDurationHours(startTime: string, endTime: string, fallbackMinutes: number) {
+/**
+ * Duración de una franja en minutos. Si la hora de fin no es posterior a la de
+ * inicio (dato incompleto), se usa la duración configurada en la clase.
+ */
+export function slotDurationMinutes(startTime: string, endTime: string, fallbackMinutes: number) {
   const [sh, sm] = startTime.split(":").map(Number);
   const [eh, em] = endTime.split(":").map(Number);
-  let mins = eh! * 60 + em! - (sh! * 60 + sm!);
-  if (mins <= 0) mins = fallbackMinutes;
-  return mins / 60;
+  const mins = eh! * 60 + em! - (sh! * 60 + sm!);
+  return mins > 0 ? mins : fallbackMinutes;
 }
 
 export function cancellationKey(scheduleSlotId: string, sessionDate: string) {
@@ -114,41 +117,58 @@ export function monthBounds(yearMonth: string) {
   };
 }
 
+export type ScheduleGroupInput = {
+  id?: string;
+  name?: string;
+  durationMinutes: number;
+  scheduleSlots: Array<{ id: string; dayOfWeek: number; startTime: string; endTime: string }>;
+  /** Primer día ("YYYY-MM-DD") en que existe la clase: antes no cuenta. */
+  activeFrom?: string | null;
+  /** Último día (incluido, "YYYY-MM-DD") en que se impartió una clase ya borrada. */
+  activeUntil?: string | null;
+};
+
+/**
+ * Sesiones y minutos del horario entre dos fechas (incluidas), sin las sesiones
+ * suspendidas ni los días en que la clase aún no existía o ya estaba borrada.
+ * Devuelve también el desglose por clase y los días distintos con clase (para el
+ * transporte por jornada).
+ */
 export function scheduleTotalsInRange(
   from: string,
   to: string,
-  classGroups: Array<{
-    durationMinutes: number;
-    scheduleSlots: Array<{ id: string; dayOfWeek: number; startTime: string; endTime: string }>;
-    /** Último día (incluido, "YYYY-MM-DD") en que se impartió una clase ya borrada. */
-    activeUntil?: string | null;
-  }>,
+  classGroups: ScheduleGroupInput[],
   cancelledKeys: Set<string>,
 ) {
-  let sessionCount = 0;
-  let totalHours = 0;
+  const perGroup = classGroups.map((g) => ({ group: g, sessions: 0, minutes: 0 }));
   const workDayDates = new Set<string>();
 
   let cursor = from;
   while (cursor <= to) {
     const dow = isoDayOfWeek(cursor);
-    for (const group of classGroups) {
+    for (const acc of perGroup) {
+      const group = acc.group;
+      if (group.activeFrom && cursor < group.activeFrom) continue;
       if (group.activeUntil && cursor > group.activeUntil) continue;
       for (const slot of group.scheduleSlots) {
         if (slot.dayOfWeek !== dow) continue;
         if (cancelledKeys.has(cancellationKey(slot.id, cursor))) continue;
-        sessionCount += 1;
-        totalHours += slotDurationHours(slot.startTime, slot.endTime, group.durationMinutes);
+        acc.sessions += 1;
+        acc.minutes += slotDurationMinutes(slot.startTime, slot.endTime, group.durationMinutes);
         workDayDates.add(cursor);
       }
     }
     cursor = addDaysIso(cursor, 1);
   }
 
+  const sessionCount = perGroup.reduce((t, g) => t + g.sessions, 0);
+  const totalMinutes = perGroup.reduce((t, g) => t + g.minutes, 0);
   return {
     sessionCount,
-    totalHours,
+    totalMinutes,
+    totalHours: totalMinutes / 60,
     workDays: workDayDates.size,
     classCount: classGroups.length,
+    perGroup,
   };
 }
