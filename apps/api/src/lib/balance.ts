@@ -114,15 +114,3 @@ export function balanceInEuros(b: BalanceCents) {
     excludedManualExpense: fromCents(b.excludedManualExpense),
   };
 }
-
-/** Filas del informe (concepto, importe en euros) en el orden en que se leen. */
-export function balanceReportRows(b: BalanceCents): Array<[string, number]> {
-  const e = balanceInEuros(b);
-  return [
-    ["Ingresos (apuntes)", e.income],
-    ["Cobros de cuotas", e.feeCollections],
-    ["Gastos (apuntes)", e.expense],
-    ["Pagos a profesores", e.teacherPayments],
-    ["Balance", e.balance],
-  ];
-}

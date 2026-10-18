@@ -39,8 +39,8 @@ it.each([
   "/payments/student-fees?status=RARO",
   "/payments/student-fees?monthFrom=2026-13",
   "/finance/incomes?from=ayer",
-  "/reports/balance-monthly?yearMonth=octubre",
-  "/reports/balance-annual?year=99",
+  "/reports/balance?monthFrom=octubre",
+  "/reports/students?monthTo=2026-13",
   "/students?limit=-5",
 ])("parámetros mal formados devuelven 400: %s", async (url) => {
   const res = await client.request("GET", url);
