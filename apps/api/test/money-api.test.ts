@@ -97,12 +97,12 @@ describe("contrato HTTP en euros", () => {
     expect(over.status).toBe(400);
     expect(over.body.error).toMatch(/21,33\s€/);
 
-    const report = await client.request("GET", `/reports/fees-issued-collected?yearMonth=${YM}`);
+    const report = await client.request("GET", `/reports/students?monthFrom=${YM}&monthTo=${YM}`);
     expect(report.body.totals).toMatchObject({ issued: 41.43, collected: 20.1, pending: 21.33 });
-    const balance = await client.request("GET", `/reports/balance-monthly?yearMonth=${YM}`);
-    expect(balance.body.feeCollections).toBe(20.1);
-    const aging = await client.request("GET", "/reports/debt-aging");
-    expect(aging.body.totalPending).toBe(21.33);
+    const balance = await client.request("GET", `/reports/balance?monthFrom=${YM}&monthTo=${YM}`);
+    expect(balance.body.totals.feeCollections).toBe(20.1);
+    const debt = await client.request("GET", "/reports/debt");
+    expect(debt.body.totalPending).toBe(21.33);
   });
 
   it("ingresos, gastos y balance", async () => {
@@ -125,9 +125,9 @@ describe("contrato HTTP en euros", () => {
     });
     const list = await client.request("GET", "/finance/incomes?from=2026-10-01&to=2026-10-31");
     expect(list.body[0].amount).toBe(45.99);
-    const balance = await client.request("GET", `/reports/balance-monthly?yearMonth=${YM}`);
+    const balance = await client.request("GET", `/reports/balance?monthFrom=${YM}&monthTo=${YM}`);
     // El balance incluye el cobro de 20,10 € registrado en la prueba anterior.
-    expect(balance.body).toMatchObject({
+    expect(balance.body.totals).toMatchObject({
       income: 45.99,
       feeCollections: 20.1,
       expense: 128.5,
@@ -153,9 +153,9 @@ describe("contrato HTTP en euros", () => {
     expect(payout).toMatchObject({ amount: 1200.5, baseAmount: 1200.5, amountPaid: 0 });
     const paid = await client.request("POST", "/payments/teacher-payouts/pay", { payoutId: payout.id, amount: 200.25 });
     expect(paid.body).toMatchObject({ amountPaid: 200.25, payments: [{ amount: 200.25 }] });
-    const report = await client.request("GET", `/reports/payouts-expected-paid?yearMonth=${YM}`);
+    const report = await client.request("GET", `/reports/teachers?monthFrom=${YM}&monthTo=${YM}`);
     expect(report.body.rows.find((r: { teacher: string }) => r.teacher === "Gil, Luis")).toMatchObject({
-      expected: 1200.5,
+      settled: 1200.5,
       paid: 200.25,
       pending: 1000.25,
     });

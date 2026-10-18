@@ -1,23 +1,28 @@
 import { useQuery } from "@tanstack/react-query";
 import { Eye, FileDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { FilterField } from "@/components/list/FilterField";
 import { WorkspaceShell } from "@/components/layout/PageShell";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MonthSelect } from "@/components/form/MonthSelect";
-import { YearSelect } from "@/components/form/YearSelect";
+import { MonthRangePicker } from "@/components/reports/MonthRangePicker";
 import { api } from "@/lib/api";
 import { currentYearMonth } from "@/lib/utils";
 import { PreviewTable } from "@/components/reports/ReportPreviewTable";
-import { reports, previewPath, downloadHref } from "@/components/reports/report-catalog";
+import {
+  downloadHref,
+  previewPath,
+  reports,
+  type MonthRange,
+} from "@/components/reports/report-catalog";
 import { ReportCatalog } from "@/components/reports/ReportCatalog";
 
 export function ReportsPage() {
   const [selectedId, setSelectedId] = useState(reports[0]!.id);
-  const [yearMonth, setYearMonth] = useState(currentYearMonth());
-  const [year, setYear] = useState(() => String(new Date().getFullYear()));
+  const [range, setRange] = useState<MonthRange>(() => ({
+    monthFrom: currentYearMonth(),
+    monthTo: currentYearMonth(),
+  }));
   type PdfPreview =
     | { status: "loading" }
     | { status: "ready"; url: string }
@@ -33,13 +38,11 @@ export function ReportsPage() {
   );
 
   const preview = useQuery({
-    queryKey: ["report-preview", selected.id, yearMonth, year],
-    queryFn: () => api<unknown>(previewPath(selected, yearMonth, year)),
+    queryKey: ["report-preview", selected.id, previewPath(selected, range)],
+    queryFn: () => api<unknown>(previewPath(selected, range)),
   });
 
-  const pdfFetchUrl = selected.pdf
-    ? downloadHref(selected, "pdf", yearMonth, year, true)
-    : null;
+  const pdfFetchUrl = downloadHref(selected, "pdf", range, true);
 
   const activeRequest = pdfRequest && pdfRequest.url === pdfFetchUrl ? pdfRequest : null;
   const requestKey = activeRequest ? `${activeRequest.url}#${activeRequest.attempt}` : null;
@@ -78,7 +81,7 @@ export function ReportsPage() {
       title="Informes"
       description="Previsualiza los datos antes de exportar a PDF o Excel"
     >
-      <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+      <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Catálogo</CardTitle>
@@ -92,42 +95,26 @@ export function ReportsPage() {
           <Card>
             <CardHeader>
               <CardTitle>{selected.label}</CardTitle>
+              <p className="text-sm text-muted-foreground">{selected.description}</p>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-wrap items-end gap-3">
-                {selected.needsMonth ? (
-                  <FilterField label="Mes">
-                    <MonthSelect className="max-w-xs" value={yearMonth} onChange={setYearMonth} />
-                  </FilterField>
-                ) : null}
-                {selected.needsYear ? (
-                  <FilterField label="Año">
-                    <YearSelect className="max-w-[8rem]" value={year} onChange={setYear} />
-                  </FilterField>
-                ) : null}
+                {selected.usesRange ? (
+                  <MonthRangePicker value={range} onChange={setRange} />
+                ) : (
+                  <p className="text-sm text-muted-foreground">A fecha de hoy.</p>
+                )}
                 <div className="flex flex-wrap gap-2">
-                  {selected.pdf ? (
-                    <Button asChild size="sm" variant="outline">
-                      <a
-                        href={downloadHref(selected, "pdf", yearMonth, year)}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <FileDown className="h-4 w-4" /> Descargar PDF
-                      </a>
-                    </Button>
-                  ) : null}
-                  {selected.xlsx ? (
-                    <Button asChild size="sm" variant="outline">
-                      <a
-                        href={downloadHref(selected, "xlsx", yearMonth, year)}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <FileDown className="h-4 w-4" /> Descargar Excel
-                      </a>
-                    </Button>
-                  ) : null}
+                  <Button asChild size="sm" variant="outline">
+                    <a href={downloadHref(selected, "pdf", range)} target="_blank" rel="noreferrer">
+                      <FileDown className="h-4 w-4" /> Descargar PDF
+                    </a>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <a href={downloadHref(selected, "xlsx", range)} target="_blank" rel="noreferrer">
+                      <FileDown className="h-4 w-4" /> Descargar Excel
+                    </a>
+                  </Button>
                 </div>
               </div>
 
@@ -144,7 +131,7 @@ export function ReportsPage() {
                 )}
               </div>
 
-              {selected.pdf ? (
+              {pdfFetchUrl ? (
                 <div>
                   <p className="mb-2 text-sm font-medium">Vista previa PDF</p>
                   {pdfPreview.status === "ready" ? (

@@ -125,6 +125,7 @@ export function drawMetaGrid(doc: PdfDoc, rows: Array<[string, string]>) {
     doc.font("Helvetica").fontSize(8).fillColor(MUTED).text(label.toUpperCase(), x, y);
     doc.font("Helvetica-Bold").fontSize(11).fillColor("#0f172a").text(value, x, y + 12);
   });
+  doc.x = 48;
   doc.y = startY + Math.ceil(rows.length / 2) * 36 + 12;
 }
 
@@ -132,52 +133,94 @@ export function drawTable(
   doc: PdfDoc,
   headers: string[],
   rows: string[][],
-  options?: { alignRightFrom?: number },
+  options?: {
+    alignRightFrom?: number;
+    /** Pesos relativos de cada columna (por defecto, todas iguales). */
+    widths?: number[];
+    /** Resalta la última fila (totales). */
+    totalRow?: boolean;
+    fontSize?: number;
+  },
 ) {
-  const tableTop = doc.y;
   const colCount = headers.length;
   const tableWidth = doc.page.width - 96;
-  const colWidth = tableWidth / colCount;
+  const weights = options?.widths ?? headers.map(() => 1);
+  const weightSum = weights.reduce((t, w) => t + w, 0);
+  const colWidths = weights.map((w) => (w / weightSum) * tableWidth);
+  const colX = colWidths.map((_, i) => 48 + colWidths.slice(0, i).reduce((t, w) => t + w, 0));
   const alignRightFrom = options?.alignRightFrom ?? colCount;
-
-  doc.font("Helvetica-Bold").fontSize(9).fillColor("#0f172a");
-  headers.forEach((h, i) => {
-    doc.text(h, 48 + i * colWidth, tableTop, {
-      width: colWidth - 8,
-      align: i >= alignRightFrom ? "right" : "left",
-    });
-  });
-
-  let y = tableTop + 18;
-  doc
-    .moveTo(48, y - 4)
-    .lineTo(doc.page.width - 48, y - 4)
-    .strokeColor(BORDER)
-    .lineWidth(1)
-    .stroke();
-
-  doc.font("Helvetica").fontSize(10).fillColor("#334155");
+  const fontSize = options?.fontSize ?? (colCount > 5 ? 8.5 : 10);
+  const rowHeight = fontSize + 10;
   const pageBreakY = doc.page.height - PAGE_MARGIN - FOOTER_ZONE;
-  for (const row of rows) {
-    if (y + 22 > pageBreakY) {
-      doc.addPage();
-      y = PAGE_MARGIN;
-    }
-    row.forEach((cell, i) => {
-      doc.text(cell, 48 + i * colWidth, y, {
-        width: colWidth - 8,
+
+  const drawCells = (cells: string[], y: number) => {
+    cells.forEach((cell, i) => {
+      // Una sola línea por celda: los textos largos se recortan con "…" en vez de
+      // montarse sobre la fila siguiente.
+      doc.text(cell, colX[i]!, y, {
+        width: colWidths[i]! - 6,
+        height: rowHeight - 4,
+        ellipsis: true,
+        lineBreak: false,
         align: i >= alignRightFrom ? "right" : "left",
       });
     });
-    y += 22;
-  }
+  };
+  const drawHeader = (y: number) => {
+    doc.font("Helvetica-Bold").fontSize(fontSize - 0.5).fillColor("#0f172a");
+    drawCells(headers, y);
+    doc
+      .moveTo(48, y + rowHeight - 4)
+      .lineTo(doc.page.width - 48, y + rowHeight - 4)
+      .strokeColor(BORDER)
+      .lineWidth(1)
+      .stroke();
+    return y + rowHeight + 2;
+  };
+
+  if (doc.y + rowHeight * 3 > pageBreakY) doc.addPage();
+  let y = drawHeader(doc.y);
+  rows.forEach((row, index) => {
+    if (y + rowHeight > pageBreakY) {
+      doc.addPage();
+      y = drawHeader(PAGE_MARGIN);
+    }
+    const isTotal = options?.totalRow && index === rows.length - 1;
+    if (isTotal) {
+      doc.rect(48, y - 3, tableWidth, rowHeight).fillColor("#f1f5f9").fill();
+      doc.font("Helvetica-Bold").fontSize(fontSize).fillColor("#0f172a");
+    } else {
+      doc.font("Helvetica").fontSize(fontSize).fillColor("#334155");
+    }
+    drawCells(row, y);
+    y += rowHeight;
+  });
 
   doc
     .moveTo(48, y)
     .lineTo(doc.page.width - 48, y)
     .strokeColor(BORDER)
     .stroke();
-  doc.y = y + 16;
+  doc.x = 48;
+  doc.y = y + 14;
+}
+
+/** Título de sección dentro de un informe. */
+export function drawSectionTitle(doc: PdfDoc, title: string) {
+  ensurePageSpace(doc, 60);
+  doc.font("Helvetica-Bold").fontSize(11).fillColor("#0f172a").text(title, 48, doc.y);
+  doc.moveDown(0.4);
+}
+
+/** Nota al pie de una sección (texto pequeño y gris). */
+export function drawNote(doc: PdfDoc, text: string) {
+  ensurePageSpace(doc, 30);
+  doc
+    .font("Helvetica")
+    .fontSize(8.5)
+    .fillColor(MUTED)
+    .text(text, 48, doc.y, { width: doc.page.width - 96 });
+  doc.moveDown(0.6);
 }
 
 export function drawTotalBar(doc: PdfDoc, label: string, amount: number) {

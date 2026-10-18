@@ -1,5 +1,13 @@
-import { DataTable, DataTableHead, DataTableRow, DataTableTd, DataTableTh } from "@/components/list/DataTable";
-import { formatMoney } from "@/lib/utils";
+import type { ReactNode } from "react";
+import {
+  DataTable,
+  DataTableHead,
+  DataTableRow,
+  DataTableTd,
+  DataTableTh,
+} from "@/components/list/DataTable";
+import type { ReportDef } from "@/components/reports/report-catalog";
+import { cn, formatMoney } from "@/lib/utils";
 
 type BalanceFigures = {
   income: number;
@@ -11,369 +19,294 @@ type BalanceFigures = {
   excludedManualExpense: number;
 };
 
-/** Aviso de apuntes manuales que no suman porque duplicarían cobros o pagos. */
-function ExcludedNote({ figures }: { figures: BalanceFigures }) {
-  if (!figures.excludedManualIncome && !figures.excludedManualExpense) return null;
+type BalanceReport = {
+  rows: Array<BalanceFigures & { month: string }>;
+  totals: BalanceFigures;
+  indicators: {
+    feesIssued: number;
+    feesCollected: number;
+    feesPending: number;
+    collectionRate: number;
+    payoutsSettled: number;
+    payoutsPaid: number;
+    payoutsPending: number;
+  };
+};
+
+type StudentsReport = {
+  rows: Array<{ student: string; fees: number; issued: number; discount: number; collected: number; pending: number }>;
+  totals: { students: number; issued: number; discount: number; collected: number; pending: number; collectionRate: number };
+  withoutFee: Array<{ student: string; months: string[] }>;
+  payments: unknown[];
+};
+
+type TeachersReport = {
+  rows: Array<{
+    teacher: string;
+    workDays: number;
+    base: number;
+    transport: number;
+    settled: number;
+    paid: number;
+    pending: number;
+  }>;
+  totals: { teachers: number; workDays: number; base: number; transport: number; settled: number; paid: number; pending: number; paymentRate: number };
+  payments: unknown[];
+};
+
+type DebtReport = {
+  asOf: string;
+  totalPending: number;
+  students: number;
+  summary: Array<{ bucket: string; amount: number }>;
+  details: Array<{ student: string; yearMonth: string; dueDate: string; daysOverdue: number; pending: number }>;
+};
+
+const pct = (n: number) => `${n.toLocaleString("es-ES")} %`;
+const money = formatMoney;
+
+function Stats({ items }: { items: Array<[string, ReactNode]> }) {
   return (
-    <p className="text-xs text-muted-foreground">
-      No incluido en el balance (apuntes manuales que duplicarían lo registrado en la app):{" "}
-      {formatMoney(figures.excludedManualIncome)} de cuotas y{" "}
-      {formatMoney(figures.excludedManualExpense)} de profesores.
-    </p>
+    <dl className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+      {items.map(([label, value]) => (
+        <div key={label} className="rounded-lg bg-muted/40 px-3 py-2">
+          <dt className="text-xs text-muted-foreground">{label}</dt>
+          <dd className="text-sm font-semibold">{value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
-export function PreviewTable({ reportId, data }: { reportId: string; data: unknown }) {
-  if (reportId === "balance-monthly" && data && typeof data === "object") {
-    const d = data as BalanceFigures & { yearMonth: string };
-    return (
-      <div className="space-y-2">
-        <DataTable>
-          <DataTableHead>
-            <DataTableTh>Concepto</DataTableTh>
-            <DataTableTh className="text-right">Importe</DataTableTh>
-          </DataTableHead>
-          <tbody>
-            {(
-              [
-                ["Ingresos (apuntes)", d.income, "+"],
-                ["Cobros de cuotas", d.feeCollections, "+"],
-                ["Gastos (apuntes)", d.expense, "−"],
-                ["Pagos a profesores", d.teacherPayments, "−"],
-              ] as const
-            ).map(([label, amount, sign]) => (
-              <DataTableRow key={label}>
-                <DataTableTd>
-                  <span className="mr-2 text-muted-foreground">{sign}</span>
-                  {label}
-                </DataTableTd>
-                <DataTableTd className="text-right">{formatMoney(amount)}</DataTableTd>
-              </DataTableRow>
-            ))}
-            <DataTableRow>
-              <DataTableTd className="font-semibold">Balance</DataTableTd>
-              <DataTableTd
-                className={`text-right font-semibold ${d.balance >= 0 ? "text-income" : "text-expense"}`}
-              >
-                {formatMoney(d.balance)}
-              </DataTableTd>
-            </DataTableRow>
-          </tbody>
-        </DataTable>
-        <ExcludedNote figures={d} />
-      </div>
-    );
-  }
+const Num = ({ children, strong }: { children: ReactNode; strong?: boolean }) => (
+  <DataTableTd className={cn("text-right tabular-nums", strong && "font-semibold")}>{children}</DataTableTd>
+);
 
-  if (reportId === "balance-annual" && data && typeof data === "object") {
-    const d = data as {
-      rows: Array<BalanceFigures & { month: string }>;
-      totals: BalanceFigures;
-    };
-    const cells = (r: BalanceFigures, strong = false) =>
-      [r.income, r.feeCollections, r.expense, r.teacherPayments, r.balance].map((v, i) => (
-        <DataTableTd key={i} className={`text-right ${strong || i === 4 ? "font-medium" : ""}`}>
-          {formatMoney(v)}
-        </DataTableTd>
-      ));
-    return (
-      <div className="space-y-2">
-        <DataTable>
-          <DataTableHead>
-            <DataTableTh>Mes</DataTableTh>
-            <DataTableTh className="text-right">Ingresos</DataTableTh>
-            <DataTableTh className="text-right">Cobros cuotas</DataTableTh>
-            <DataTableTh className="text-right">Gastos</DataTableTh>
-            <DataTableTh className="text-right">Pagos profesores</DataTableTh>
-            <DataTableTh className="text-right">Balance</DataTableTh>
-          </DataTableHead>
-          <tbody>
-            {d.rows.map((r) => (
-              <DataTableRow key={r.month}>
-                <DataTableTd>{r.month}</DataTableTd>
-                {cells(r)}
-              </DataTableRow>
-            ))}
-            <DataTableRow>
-              <DataTableTd className="font-medium">Total</DataTableTd>
-              {cells(d.totals, true)}
-            </DataTableRow>
-          </tbody>
-        </DataTable>
-        <ExcludedNote figures={d.totals} />
-      </div>
-    );
-  }
-
-  if (
-    (reportId === "income-by-student" || reportId === "cost-by-teacher") &&
-    Array.isArray(data)
-  ) {
-    const label = reportId === "income-by-student" ? "Alumno" : "Profesor";
-    return (
+function BalancePreview({ data }: { data: BalanceReport }) {
+  const t = data.totals;
+  const ind = data.indicators;
+  const balanceTone = (n: number) => (n >= 0 ? "text-income" : "text-expense");
+  return (
+    <div className="space-y-3">
+      <Stats
+        items={[
+          [
+            "Balance del periodo",
+            <span key="balance" className={balanceTone(t.balance)}>
+              {money(t.balance)}
+            </span>,
+          ],
+          ["Cobrado / tasa de cobro", `${money(ind.feesCollected)} · ${pct(ind.collectionRate)}`],
+          ["Pendiente de cobro", money(ind.feesPending)],
+          ["Pendiente de pago a profesores", money(ind.payoutsPending)],
+        ]}
+      />
       <DataTable>
         <DataTableHead>
-          <DataTableTh>{label}</DataTableTh>
-          <DataTableTh className="text-right">Pagado</DataTableTh>
-          <DataTableTh className="text-right">Pendiente</DataTableTh>
-        </DataTableHead>
-        <tbody>
-          {(data as Array<{ name: string; paid: number; pending: number }>).map((r) => (
-            <DataTableRow key={r.name}>
-              <DataTableTd>{r.name}</DataTableTd>
-              <DataTableTd className="text-right">{formatMoney(r.paid)}</DataTableTd>
-              <DataTableTd className="text-right">{formatMoney(r.pending)}</DataTableTd>
-            </DataTableRow>
-          ))}
-        </tbody>
-      </DataTable>
-    );
-  }
-
-  if (reportId === "unpaid" && Array.isArray(data)) {
-    return (
-      <DataTable>
-        <DataTableHead>
-          <DataTableTh>Alumno</DataTableTh>
           <DataTableTh>Mes</DataTableTh>
-          <DataTableTh className="text-right">Pendiente</DataTableTh>
-          <DataTableTh>Estado</DataTableTh>
+          <DataTableTh className="whitespace-nowrap text-right">+ Ingresos</DataTableTh>
+          <DataTableTh className="whitespace-nowrap text-right">+ Cobros cuotas</DataTableTh>
+          <DataTableTh className="whitespace-nowrap text-right">− Gastos</DataTableTh>
+          <DataTableTh className="whitespace-nowrap text-right">− Pagos prof.</DataTableTh>
+          <DataTableTh className="whitespace-nowrap text-right">Balance</DataTableTh>
         </DataTableHead>
         <tbody>
-          {(data as Array<{ student: string; month: string; pending: number; status: string }>).map(
-            (r, i) => (
-              <DataTableRow key={`${r.student}-${r.month}-${i}`}>
-                <DataTableTd>{r.student}</DataTableTd>
-                <DataTableTd>{r.month}</DataTableTd>
-                <DataTableTd className="text-right">{formatMoney(r.pending)}</DataTableTd>
-                <DataTableTd>{r.status}</DataTableTd>
+          {[...data.rows, ...(data.rows.length > 1 ? [{ ...t, month: "Total" }] : [])].map((r) => {
+            const total = r.month === "Total";
+            return (
+              <DataTableRow key={r.month} className={total ? "bg-muted/40" : undefined}>
+                <DataTableTd className={cn("whitespace-nowrap", total && "font-semibold")}>{r.month}</DataTableTd>
+                <Num strong={total}>{money(r.income)}</Num>
+                <Num strong={total}>{money(r.feeCollections)}</Num>
+                <Num strong={total}>{money(r.expense)}</Num>
+                <Num strong={total}>{money(r.teacherPayments)}</Num>
+                <DataTableTd className={cn("text-right font-semibold tabular-nums", balanceTone(r.balance))}>
+                  {money(r.balance)}
+                </DataTableTd>
               </DataTableRow>
-            ),
-          )}
+            );
+          })}
         </tbody>
       </DataTable>
-    );
-  }
-
-  if (reportId === "debt-aging" && data && typeof data === "object") {
-    const d = data as {
-      asOf: string;
-      totalPending: number;
-      summary: Array<{ bucket: string; amount: number }>;
-      details: Array<{ student: string; yearMonth: string; pending: number; bucket: string }>;
-    };
-    return (
-      <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          Referencia {d.asOf} · Total pendiente {formatMoney(d.totalPending)}
+      {t.excludedManualIncome || t.excludedManualExpense ? (
+        <p className="text-xs text-muted-foreground">
+          No incluido en el balance (apuntes manuales que duplicarían lo registrado en la app):{" "}
+          {money(t.excludedManualIncome)} de cuotas y {money(t.excludedManualExpense)} de profesores.
         </p>
-        <DataTable>
-          <DataTableHead>
-            <DataTableTh>Tramo</DataTableTh>
-            <DataTableTh className="text-right">Importe</DataTableTh>
-          </DataTableHead>
-          <tbody>
-            {d.summary.map((r) => (
-              <DataTableRow key={r.bucket}>
-                <DataTableTd>{r.bucket}</DataTableTd>
-                <DataTableTd className="text-right">{formatMoney(r.amount)}</DataTableTd>
-              </DataTableRow>
-            ))}
-          </tbody>
-        </DataTable>
-        {d.details.length > 0 ? (
-          <DataTable>
-            <DataTableHead>
-              <DataTableTh>Alumno</DataTableTh>
-              <DataTableTh>Mes</DataTableTh>
-              <DataTableTh>Tramo</DataTableTh>
-              <DataTableTh className="text-right">Pendiente</DataTableTh>
-            </DataTableHead>
-            <tbody>
-              {d.details.slice(0, 50).map((r, i) => (
-                <DataTableRow key={`${r.student}-${r.yearMonth}-${i}`}>
-                  <DataTableTd>{r.student}</DataTableTd>
-                  <DataTableTd>{r.yearMonth}</DataTableTd>
-                  <DataTableTd>{r.bucket}</DataTableTd>
-                  <DataTableTd className="text-right">{formatMoney(r.pending)}</DataTableTd>
-                </DataTableRow>
-              ))}
-            </tbody>
-          </DataTable>
-        ) : null}
-      </div>
-    );
-  }
+      ) : null}
+    </div>
+  );
+}
 
-  if (reportId === "fees-issued-collected" && data && typeof data === "object") {
-    const d = data as {
-      yearMonth: string;
-      totals: { issued: number; collected: number; pending: number; collectionRate: number };
-      rows: Array<{ student: string; issued: number; collected: number; pending: number; status: string }>;
-    };
-    return (
-      <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          {d.yearMonth}: emitido {formatMoney(d.totals.issued)} · cobrado {formatMoney(d.totals.collected)} ·{" "}
-          {d.totals.collectionRate}% cobro
-        </p>
-        <DataTable>
+function StudentsPreview({ data }: { data: StudentsReport }) {
+  const t = data.totals;
+  return (
+    <div className="space-y-3">
+      <Stats
+        items={[
+          ["Alumnos con cuota", String(t.students)],
+          ["Emitido", money(t.issued)],
+          ["Cobrado / tasa de cobro", `${money(t.collected)} · ${pct(t.collectionRate)}`],
+          ["Pendiente", money(t.pending)],
+        ]}
+      />
+      {data.rows.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No hay cuotas en este periodo.</p>
+      ) : (
+        <DataTable maxBodyHeight="min(50vh, 520px)">
           <DataTableHead>
             <DataTableTh>Alumno</DataTableTh>
-            <DataTableTh className="text-right">Emitido</DataTableTh>
-            <DataTableTh className="text-right">Cobrado</DataTableTh>
-            <DataTableTh className="text-right">Pendiente</DataTableTh>
-            <DataTableTh>Estado</DataTableTh>
+            <DataTableTh className="whitespace-nowrap text-right">Cuotas</DataTableTh>
+            <DataTableTh className="whitespace-nowrap text-right">Emitido</DataTableTh>
+            <DataTableTh className="whitespace-nowrap text-right">Descuentos</DataTableTh>
+            <DataTableTh className="whitespace-nowrap text-right">Cobrado</DataTableTh>
+            <DataTableTh className="whitespace-nowrap text-right">Pendiente</DataTableTh>
           </DataTableHead>
           <tbody>
-            {d.rows.map((r) => (
-              <DataTableRow key={`${r.student}-${r.status}`}>
-                <DataTableTd>{r.student}</DataTableTd>
-                <DataTableTd className="text-right">{formatMoney(r.issued)}</DataTableTd>
-                <DataTableTd className="text-right">{formatMoney(r.collected)}</DataTableTd>
-                <DataTableTd className="text-right">{formatMoney(r.pending)}</DataTableTd>
-                <DataTableTd>{r.status}</DataTableTd>
-              </DataTableRow>
-            ))}
-          </tbody>
-        </DataTable>
-      </div>
-    );
-  }
-
-  if (reportId === "payouts-expected-paid" && data && typeof data === "object") {
-    const d = data as {
-      yearMonth: string;
-      totals: { expected: number; paid: number; pending: number; paymentRate: number };
-      rows: Array<{ teacher: string; expected: number; paid: number; pending: number; status: string }>;
-    };
-    return (
-      <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          {d.yearMonth}: previsto {formatMoney(d.totals.expected)} · pagado {formatMoney(d.totals.paid)} ·{" "}
-          {d.totals.paymentRate}% pagado
-        </p>
-        <DataTable>
-          <DataTableHead>
-            <DataTableTh>Profesor</DataTableTh>
-            <DataTableTh className="text-right">Previsto</DataTableTh>
-            <DataTableTh className="text-right">Pagado</DataTableTh>
-            <DataTableTh className="text-right">Pendiente</DataTableTh>
-            <DataTableTh>Estado</DataTableTh>
-          </DataTableHead>
-          <tbody>
-            {d.rows.map((r) => (
-              <DataTableRow key={r.teacher}>
-                <DataTableTd>{r.teacher}</DataTableTd>
-                <DataTableTd className="text-right">{formatMoney(r.expected)}</DataTableTd>
-                <DataTableTd className="text-right">{formatMoney(r.paid)}</DataTableTd>
-                <DataTableTd className="text-right">{formatMoney(r.pending)}</DataTableTd>
-                <DataTableTd>{r.status}</DataTableTd>
-              </DataTableRow>
-            ))}
-          </tbody>
-        </DataTable>
-      </div>
-    );
-  }
-
-  if (reportId === "executive-monthly" && data && typeof data === "object") {
-    const d = data as {
-      yearMonth: string;
-      previousMonth: string;
-      kpis: Array<{ label: string; value: number; unit: string; deltaPct?: number }>;
-    };
-    return (
-      <div className="space-y-2">
-        <p className="text-sm text-muted-foreground">
-          Mes {d.yearMonth} (comparación vs {d.previousMonth})
-        </p>
-        <DataTable>
-          <DataTableHead>
-            <DataTableTh>Indicador</DataTableTh>
-            <DataTableTh className="text-right">Valor</DataTableTh>
-            <DataTableTh className="text-right">Var. %</DataTableTh>
-          </DataTableHead>
-          <tbody>
-            {d.kpis.map((k) => (
-              <DataTableRow key={k.label}>
-                <DataTableTd>{k.label}</DataTableTd>
-                <DataTableTd className="text-right font-medium">
-                  {k.unit === "money"
-                    ? formatMoney(k.value)
-                    : k.unit === "percent"
-                      ? `${k.value}%`
-                      : k.value}
-                </DataTableTd>
-                <DataTableTd className="text-right text-muted-foreground">
-                  {k.deltaPct !== undefined ? `${k.deltaPct > 0 ? "+" : ""}${k.deltaPct}%` : "—"}
-                </DataTableTd>
-              </DataTableRow>
-            ))}
-          </tbody>
-        </DataTable>
-      </div>
-    );
-  }
-
-  if (reportId === "students-without-fee" && data && typeof data === "object") {
-    const d = data as {
-      yearMonth: string;
-      count: number;
-      activeStudents: number;
-      rows: Array<{ student: string; instrument: string; level: string; teacher: string }>;
-    };
-    return (
-      <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          {d.yearMonth}: {d.count} de {d.activeStudents} alumnos activos sin cuota generada
-        </p>
-        <DataTable>
-          <DataTableHead>
-            <DataTableTh>Alumno</DataTableTh>
-            <DataTableTh>Instrumento</DataTableTh>
-            <DataTableTh>Nivel</DataTableTh>
-            <DataTableTh>Profesor</DataTableTh>
-          </DataTableHead>
-          <tbody>
-            {d.rows.map((r) => (
+            {data.rows.map((r) => (
               <DataTableRow key={r.student}>
                 <DataTableTd>{r.student}</DataTableTd>
-                <DataTableTd>{r.instrument}</DataTableTd>
-                <DataTableTd>{r.level}</DataTableTd>
-                <DataTableTd>{r.teacher}</DataTableTd>
+                <Num>{r.fees}</Num>
+                <Num>{money(r.issued)}</Num>
+                <Num>{money(r.discount)}</Num>
+                <Num>{money(r.collected)}</Num>
+                <DataTableTd className={cn("text-right tabular-nums", r.pending > 0 && "text-expense")}>
+                  {money(r.pending)}
+                </DataTableTd>
               </DataTableRow>
             ))}
           </tbody>
         </DataTable>
-      </div>
-    );
-  }
+      )}
+      {data.withoutFee.length > 0 ? (
+        <div className="rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm">
+          <p className="mb-1 font-medium">Alumnos activos sin cuota ({data.withoutFee.length})</p>
+          <ul className="space-y-0.5 text-muted-foreground">
+            {data.withoutFee.map((s) => (
+              <li key={s.student}>
+                {s.student}: {s.months.join(", ")}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <p className="text-xs text-muted-foreground">
+        El Excel incluye además el detalle por mes y cada cobro ({data.payments.length}).
+      </p>
+    </div>
+  );
+}
 
-  if (reportId === "evolution" && Array.isArray(data)) {
-    return (
+function TeachersPreview({ data }: { data: TeachersReport }) {
+  const t = data.totals;
+  return (
+    <div className="space-y-3">
+      <Stats
+        items={[
+          ["Profesores liquidados", String(t.teachers)],
+          ["Liquidado", money(t.settled)],
+          ["Pagado", `${money(t.paid)} · ${pct(t.paymentRate)}`],
+          ["Pendiente de pago", money(t.pending)],
+        ]}
+      />
+      {data.rows.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No hay liquidaciones en este periodo.</p>
+      ) : (
+        <DataTable>
+          <DataTableHead>
+            <DataTableTh>Profesor</DataTableTh>
+            <DataTableTh className="whitespace-nowrap text-right">Jornadas</DataTableTh>
+            <DataTableTh className="whitespace-nowrap text-right">Base</DataTableTh>
+            <DataTableTh className="whitespace-nowrap text-right">Transporte</DataTableTh>
+            <DataTableTh className="whitespace-nowrap text-right">Liquidado</DataTableTh>
+            <DataTableTh className="whitespace-nowrap text-right">Pagado</DataTableTh>
+            <DataTableTh className="whitespace-nowrap text-right">Pendiente</DataTableTh>
+          </DataTableHead>
+          <tbody>
+            {data.rows.map((r) => (
+              <DataTableRow key={r.teacher}>
+                <DataTableTd>{r.teacher}</DataTableTd>
+                <Num>{r.workDays}</Num>
+                <Num>{money(r.base)}</Num>
+                <Num>{money(r.transport)}</Num>
+                <Num>{money(r.settled)}</Num>
+                <Num>{money(r.paid)}</Num>
+                <DataTableTd className={cn("text-right tabular-nums", r.pending > 0 && "text-expense")}>
+                  {money(r.pending)}
+                </DataTableTd>
+              </DataTableRow>
+            ))}
+          </tbody>
+        </DataTable>
+      )}
+      <p className="text-xs text-muted-foreground">
+        El Excel incluye además el detalle por mes y cada pago ({data.payments.length}).
+      </p>
+    </div>
+  );
+}
+
+function DebtPreview({ data }: { data: DebtReport }) {
+  return (
+    <div className="space-y-3">
+      <Stats
+        items={[
+          ["A fecha", data.asOf],
+          ["Total pendiente", money(data.totalPending)],
+          ["Alumnos con deuda", String(data.students)],
+          ["Cuotas pendientes", String(data.details.length)],
+        ]}
+      />
       <DataTable>
         <DataTableHead>
-          <DataTableTh>Mes</DataTableTh>
-          <DataTableTh className="text-right">Ingresos</DataTableTh>
-          <DataTableTh className="text-right">Gastos</DataTableTh>
-          <DataTableTh className="text-right">Balance</DataTableTh>
+          <DataTableTh>Antigüedad</DataTableTh>
+          <DataTableTh className="whitespace-nowrap text-right">Importe</DataTableTh>
         </DataTableHead>
         <tbody>
-          {(
-            data as Array<{ month: string; income: number; expense: number; balance: number }>
-          ).map((r) => (
-            <DataTableRow key={r.month}>
-              <DataTableTd>{r.month}</DataTableTd>
-              <DataTableTd className="text-right">{formatMoney(r.income)}</DataTableTd>
-              <DataTableTd className="text-right">{formatMoney(r.expense)}</DataTableTd>
-              <DataTableTd className="text-right">{formatMoney(r.balance)}</DataTableTd>
+          {data.summary.map((r) => (
+            <DataTableRow key={r.bucket}>
+              <DataTableTd>{r.bucket}</DataTableTd>
+              <Num>{money(r.amount)}</Num>
             </DataTableRow>
           ))}
         </tbody>
       </DataTable>
-    );
-  }
+      {data.details.length > 0 ? (
+        <DataTable maxBodyHeight="min(40vh, 400px)">
+          <DataTableHead>
+            <DataTableTh>Alumno</DataTableTh>
+            <DataTableTh>Cuota</DataTableTh>
+            <DataTableTh>Vence</DataTableTh>
+            <DataTableTh className="whitespace-nowrap text-right">Días</DataTableTh>
+            <DataTableTh className="whitespace-nowrap text-right">Pendiente</DataTableTh>
+          </DataTableHead>
+          <tbody>
+            {data.details.map((r) => (
+              <DataTableRow key={`${r.student}-${r.yearMonth}`}>
+                <DataTableTd>{r.student}</DataTableTd>
+                <DataTableTd>{r.yearMonth}</DataTableTd>
+                <DataTableTd>{r.dueDate}</DataTableTd>
+                <Num>{r.daysOverdue}</Num>
+                <Num>{money(r.pending)}</Num>
+              </DataTableRow>
+            ))}
+          </tbody>
+        </DataTable>
+      ) : null}
+    </div>
+  );
+}
 
-  return <p className="text-sm text-muted-foreground">Sin datos para previsualizar.</p>;
+export function PreviewTable({ reportId, data }: { reportId: ReportDef["id"]; data: unknown }) {
+  if (!data || typeof data !== "object") return null;
+  switch (reportId) {
+    case "balance":
+      return <BalancePreview data={data as BalanceReport} />;
+    case "students":
+      return <StudentsPreview data={data as StudentsReport} />;
+    case "teachers":
+      return <TeachersPreview data={data as TeachersReport} />;
+    case "debt":
+      return <DebtPreview data={data as DebtReport} />;
+  }
 }

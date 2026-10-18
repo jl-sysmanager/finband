@@ -66,8 +66,8 @@ it("el balance suma cobros y resta pagos a profesores sin duplicar los apuntes m
     })).status,
   ).toBe(200);
 
-  const monthly = await client.request("GET", `/reports/balance-monthly?yearMonth=${YM}`);
-  expect(monthly.body).toMatchObject({
+  const monthly = await client.request("GET", `/reports/balance?monthFrom=${YM}&monthTo=${YM}`);
+  expect(monthly.body.totals).toMatchObject({
     income: 200,
     feeCollections: 60,
     expense: 30.5,
@@ -80,12 +80,15 @@ it("el balance suma cobros y resta pagos a profesores sin duplicar los apuntes m
   const summary = await client.request("GET", "/dashboard/summary");
   // El resumen del dashboard es del mes en curso: aquí solo comprobamos que usa el mismo criterio.
   expect(summary.status).toBe(200);
-  const exec = await client.request("GET", `/reports/executive-monthly?yearMonth=${YM}`);
-  const kpi = (label: string) =>
-    exec.body.kpis.find((k: { label: string }) => k.label.startsWith(label))?.value;
-  expect(kpi("Balance")).toBe(-270.5);
-  expect(kpi("Ingresos")).toBe(260);
-  expect(kpi("Gastos")).toBe(530.5);
+  // Indicadores: cuotas y liquidaciones de los meses del periodo.
+  expect(monthly.body.indicators).toMatchObject({
+    feesIssued: 60,
+    feesCollected: 60,
+    collectionRate: 100,
+    payoutsSettled: 500,
+    payoutsPaid: 500,
+    payoutsPending: 0,
+  });
 });
 
 it("no admite apuntes manuales nuevos en categorías gestionadas por la app", async () => {

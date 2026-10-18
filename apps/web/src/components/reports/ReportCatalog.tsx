@@ -1,11 +1,11 @@
-import { reports } from "@/components/reports/report-catalog";
+import { reports, type ReportDef } from "@/components/reports/report-catalog";
 
 export function ReportCatalog({
   selectedId,
   onSelect,
 }: {
-  selectedId: string;
-  onSelect: (id: string) => void;
+  selectedId: ReportDef["id"];
+  onSelect: (id: ReportDef["id"]) => void;
 }) {
   return (
     <>
@@ -25,7 +25,8 @@ export function ReportCatalog({
                 selectedId === r.id ? "bg-primary/10 font-medium text-primary" : ""
               }`}
             >
-              {r.label}
+              <span className="block">{r.label}</span>
+              <span className="block text-xs font-normal text-muted-foreground">{r.description}</span>
             </button>
           </div>
         );
