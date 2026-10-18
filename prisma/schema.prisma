@@ -25,13 +25,6 @@ enum ClassType {
   ENSAYO
 }
 
-enum PaymentMethod {
-  EFECTIVO
-  TRANSFERENCIA
-  BIZUM
-  TARJETA
-}
-
 enum FeeStatus {
   PENDING
   PARTIAL
@@ -87,6 +80,18 @@ model AcademicYear {
   isActive  Boolean         @default(false)
   createdAt DateTime        @default(now())
   activeFor SchoolSettings? @relation("ActiveYear")
+}
+
+/// Métodos de pago configurables desde Configuración. El id es estable (lo guardan
+/// los cobros e ingresos); el nombre se puede cambiar. Los que tienen registros no se
+/// borran: se desactivan y dejan de ofrecerse en los formularios.
+model PaymentMethod {
+  id              String           @id @default(cuid())
+  label           String           @unique
+  active          Boolean          @default(true)
+  sortOrder       Int              @default(0)
+  studentPayments StudentPayment[]
+  incomeEntries   IncomeEntry[]
 }
 
 model IncomeCategory {
@@ -273,14 +278,16 @@ model StudentFee {
 }
 
 model StudentPayment {
-  id        String        @id @default(cuid())
-  feeId     String
-  fee       StudentFee    @relation(fields: [feeId], references: [id], onDelete: Cascade)
-  amount    Int
-  method    PaymentMethod
-  paidAt    DateTime      @default(now())
-  notes     String?
-  createdAt DateTime      @default(now())
+  id            String        @id @default(cuid())
+  feeId         String
+  fee           StudentFee    @relation(fields: [feeId], references: [id], onDelete: Cascade)
+  amount        Int
+  /// Id del método de pago configurado (p. ej. "EFECTIVO").
+  method        String
+  paymentMethod PaymentMethod @relation(fields: [method], references: [id])
+  paidAt        DateTime      @default(now())
+  notes         String?
+  createdAt     DateTime      @default(now())
 
   @@index([feeId])
   @@index([paidAt])
@@ -322,16 +329,17 @@ model TeacherPayoutPayment {
 }
 
 model IncomeEntry {
-  id         String         @id @default(cuid())
-  date       DateTime
-  concept    String
-  categoryId String
-  category   IncomeCategory @relation(fields: [categoryId], references: [id])
-  amount     Int
-  method     PaymentMethod?
-  notes      String?
-  createdAt  DateTime       @default(now())
-  updatedAt  DateTime       @updatedAt
+  id            String         @id @default(cuid())
+  date          DateTime
+  concept       String
+  categoryId    String
+  category      IncomeCategory @relation(fields: [categoryId], references: [id])
+  amount        Int
+  method        String?
+  paymentMethod PaymentMethod? @relation(fields: [method], references: [id], onDelete: Restrict)
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   @@index([date])
 }

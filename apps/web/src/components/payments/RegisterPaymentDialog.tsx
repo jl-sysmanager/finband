@@ -1,5 +1,4 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { PAYMENT_METHOD_LABELS, PAYMENT_METHODS } from "@finband/shared";
 import { useMemo, useState } from "react";
 import type { StudentFeeRow } from "@/components/detail/StudentFeeDetailPanel";
 import { Field } from "@/components/form/Field";
@@ -15,11 +14,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useConfirm } from "@/hooks/useConfirm";
+import { usePaymentMethods } from "@/hooks/usePaymentMethods";
 import { ApiError, api, downloadUrl } from "@/lib/api";
 import { invalidateFinanceQueries } from "@/lib/query-invalidation";
 import { formatMoney, roundMoney } from "@/lib/utils";
 
-const METHOD_OPTIONS = PAYMENT_METHODS.map((m) => ({ value: m, label: PAYMENT_METHOD_LABELS[m] }));
 
 const pendingOf = (f: StudentFeeRow) => Math.max(0, roundMoney(f.totalAmount - f.amountPaid));
 
@@ -79,7 +78,9 @@ function RegisterPaymentForm({
   const qc = useQueryClient();
   const [feeId, setFeeId] = useState("");
   const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState("EFECTIVO");
+  const paymentMethods = usePaymentMethods();
+  const [pickedMethod, setMethod] = useState("");
+  const method = pickedMethod || paymentMethods.defaultId;
   const [error, setError] = useState<string | null>(null);
 
   const selected = fees.find((f) => f.id === feeId);
@@ -144,7 +145,7 @@ function RegisterPaymentForm({
             />
           </Field>
           <Field label="Método">
-            <FormSelect value={method} onValueChange={setMethod} options={METHOD_OPTIONS} />
+            <FormSelect value={method} onValueChange={setMethod} options={paymentMethods.options()} />
           </Field>
         </div>
       </div>

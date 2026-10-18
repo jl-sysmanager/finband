@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { DataTable, DataTableHead, DataTableRow, DataTableTd, DataTableTh } from "@/components/list/DataTable";
 import { WorkspaceShell } from "@/components/layout/PageShell";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ConfigListsTab } from "@/components/settings/ConfigListsTab";
 import { ApiError, api, deleteSchoolLogo, downloadUrl, uploadBackup, uploadSchoolLogo } from "@/lib/api";
 import { SchoolLogo } from "@/components/layout/SchoolLogo";
 import { schoolLogoUrl } from "@/lib/school-branding";
@@ -198,6 +199,7 @@ export function SettingsPage() {
       <Tabs defaultValue="centro" className="w-full">
         <TabsList className="mb-4 flex h-auto w-full flex-wrap justify-start">
           <TabsTrigger value="centro">Centro</TabsTrigger>
+          <TabsTrigger value="listas">Categorías y métodos de pago</TabsTrigger>
           {isAdmin ? <TabsTrigger value="usuarios">Usuarios</TabsTrigger> : null}
           {isAdmin ? <TabsTrigger value="copias">Copias</TabsTrigger> : null}
           {isAdmin ? <TabsTrigger value="auditoria">Auditoría</TabsTrigger> : null}
@@ -290,6 +292,10 @@ export function SettingsPage() {
           </Button>
         ) : null}
       </form>
+        </TabsContent>
+
+        <TabsContent value="listas">
+          <ConfigListsTab canEdit={!!isAdmin} />
         </TabsContent>
 
         {isAdmin ? (

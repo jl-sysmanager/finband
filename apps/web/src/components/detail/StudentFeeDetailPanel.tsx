@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { FEE_STATUS_LABELS, PAYMENT_METHOD_LABELS, PAYMENT_METHODS } from "@finband/shared";
+import { FEE_STATUS_LABELS } from "@finband/shared";
 import { Bell, FileText, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { FormSelect } from "@/components/form/FormSelect";
@@ -22,6 +22,7 @@ import { formatDate, formatMoney, roundMoney } from "@/lib/utils";
 import { toast } from "@/stores/toast";
 import { useAuth } from "@/stores/auth";
 import { useConfirm } from "@/hooks/useConfirm";
+import { usePaymentMethods } from "@/hooks/usePaymentMethods";
 export type StudentFeeRow = {
   id: string;
   yearMonth: string;
@@ -38,10 +39,6 @@ type Props = {
   onDeleted?: () => void;
 };
 
-const METHOD_OPTIONS = PAYMENT_METHODS.map((m) => ({
-  value: m,
-  label: PAYMENT_METHOD_LABELS[m],
-}));
 
 export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
   const qc = useQueryClient();
@@ -56,7 +53,9 @@ export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
     setProposedFor(pending);
     setPayAmount(pending > 0 ? String(pending) : "");
   }
-  const [payMethod, setPayMethod] = useState("EFECTIVO");
+  const paymentMethods = usePaymentMethods();
+  const [pickedMethod, setPayMethod] = useState("");
+  const payMethod = pickedMethod || paymentMethods.defaultId;
   const [reminderOpen, setReminderOpen] = useState(false);
 
   const payFee = useMutation({
@@ -168,7 +167,11 @@ export function StudentFeeDetailPanel({ fee, onClose, onDeleted }: Props) {
                 />
               </Field>
               <Field label="Método">
-                <FormSelect value={payMethod} onValueChange={setPayMethod} options={METHOD_OPTIONS} />
+                <FormSelect
+                  value={payMethod}
+                  onValueChange={setPayMethod}
+                  options={paymentMethods.options()}
+                />
               </Field>
             </div>
             <Button

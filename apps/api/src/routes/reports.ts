@@ -1,6 +1,5 @@
 import ExcelJS from "exceljs";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { PAYMENT_METHOD_LABELS } from "@finband/shared";
 import { yearMonthOf } from "../lib/dates.js";
 import {
   createPdf,
@@ -271,10 +270,7 @@ export async function reportRoutes(app: FastifyInstance) {
           { header: "Importe", key: "amount", money: true },
           { header: "Método", key: "method", width: 14 },
         ],
-        data.payments.map((p) => ({
-          ...p,
-          method: PAYMENT_METHOD_LABELS[p.method as keyof typeof PAYMENT_METHOD_LABELS] ?? p.method,
-        })),
+        data.payments,
       );
       addSheet(
         wb,

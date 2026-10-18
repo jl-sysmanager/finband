@@ -1,5 +1,4 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { PAYMENT_METHOD_LABELS } from "@finband/shared";
 import {
   createPdf,
   drawMetaGrid,
@@ -21,8 +20,6 @@ function sendPdf(reply: FastifyReply, filename: string, buffer: Buffer) {
 /** Los importes de la base están en céntimos; el PDF muestra euros. */
 const euro = (cents: number) => formatEuro(fromCents(cents));
 
-const METHOD_LABELS = PAYMENT_METHOD_LABELS as Record<string, string>;
-
 const PAYOUT_STATUS_LABELS: Record<string, string> = {
   PENDING: "Pendiente",
   PARTIAL: "Parcial",
@@ -36,6 +33,7 @@ export async function receiptRoutes(app: FastifyInstance) {
       where: { id },
       include: {
         fee: { include: { student: true } },
+        paymentMethod: { select: { label: true } },
       },
     });
     if (!payment) return reply.status(404).send({ error: "Cobro no encontrado" });
@@ -54,7 +52,7 @@ export async function receiptRoutes(app: FastifyInstance) {
           ["Alumno", `${student.firstName} ${student.lastName}`],
           ["Periodo", payment.fee.yearMonth],
           ["Fecha de cobro", payment.paidAt.toLocaleDateString("es-ES")],
-          ["Método", METHOD_LABELS[payment.method] ?? payment.method],
+          ["Método", payment.paymentMethod.label],
         ]);
 
         d.font("Helvetica-Bold").fontSize(11).fillColor("#0f172a").text("Detalle de la cuota");

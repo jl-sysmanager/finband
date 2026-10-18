@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from "@finband/shared";
 import { Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { TablePagination } from "@/components/list/TablePagination";
@@ -22,6 +21,7 @@ import {
   DataTableTh,
 } from "@/components/list/DataTable";
 import { ApiError, api } from "@/lib/api";
+import { usePaymentMethods } from "@/hooks/usePaymentMethods";
 import { buildQuery, firstDayOfCurrentMonthISO, formatDate, formatMoney, todayISO } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -52,6 +52,7 @@ export function FinancePage({ mode }: FinanceProps) {
   const [editing, setEditing] = useState<Entry | null>(null);
   const [categoryId, setCategoryId] = useState("");
   const [method, setMethod] = useState(NO_METHOD);
+  const paymentMethods = usePaymentMethods();
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -186,7 +187,7 @@ export function FinancePage({ mode }: FinanceProps) {
     : "Los pagos a profesores se registran en sus liquidaciones y ya restan en el balance.";
   const methodOptions = [
     { value: NO_METHOD, label: "—" },
-    ...PAYMENT_METHODS.map((m) => ({ value: m, label: PAYMENT_METHOD_LABELS[m] })),
+    ...paymentMethods.options(editing?.method),
   ];
 
   return (
@@ -328,9 +329,7 @@ export function FinancePage({ mode }: FinanceProps) {
                   <DataTableTd>{e.category.name}</DataTableTd>
                   {isIncome ? (
                     <DataTableTd>
-                      {e.method
-                        ? PAYMENT_METHOD_LABELS[e.method as keyof typeof PAYMENT_METHOD_LABELS]
-                        : "—"}
+                      {paymentMethods.labelOf(e.method)}
                     </DataTableTd>
                   ) : null}
                   <DataTableTd

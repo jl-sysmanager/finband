@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { expenseEntrySchema, incomeEntrySchema } from "@finband/shared";
 import { recordAudit } from "../lib/audit.js";
 import { prisma } from "../lib/prisma.js";
+import { paymentMethodError } from "../lib/payment-methods.js";
 import { calendarRangeFilter, parseCalendarDate } from "../lib/dates.js";
 
 const MANAGED_MESSAGE: Record<"income" | "expense", string> = {
@@ -30,7 +31,7 @@ export async function financeRoutes(app: FastifyInstance) {
     if (dateRange) where.date = dateRange;
     return prisma.incomeEntry.findMany({
       where,
-      include: { category: true },
+      include: { category: true, paymentMethod: { select: { label: true } } },
       orderBy: { date: "desc" },
     });
   });
@@ -43,6 +44,8 @@ export async function financeRoutes(app: FastifyInstance) {
     const d = parsed.data;
     const managed = await managedCategoryError("income", d.categoryId);
     if (managed) return reply.status(400).send({ error: managed });
+    const methodError = await paymentMethodError(d.method);
+    if (methodError) return reply.status(400).send({ error: methodError });
     const saved = await prisma.incomeEntry.create({
       data: {
         date: parseCalendarDate(d.date),
@@ -71,8 +74,13 @@ export async function financeRoutes(app: FastifyInstance) {
     const d = parsed.data;
     // Los apuntes antiguos de una categoría gestionada se pueden corregir o mover a
     // otra categoría, pero no se puede llevar un apunte nuevo a una gestionada.
-    const current = await prisma.incomeEntry.findUnique({ where: { id }, select: { categoryId: true } });
+    const current = await prisma.incomeEntry.findUnique({
+      where: { id },
+      select: { categoryId: true, method: true },
+    });
     if (!current) return reply.status(404).send({ error: "Apunte no encontrado" });
+    const methodError = await paymentMethodError(d.method, current.method);
+    if (methodError) return reply.status(400).send({ error: methodError });
     if (d.categoryId !== current.categoryId) {
       const managed = await managedCategoryError("income", d.categoryId);
       if (managed) return reply.status(400).send({ error: managed });
