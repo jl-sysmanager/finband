@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
-import { PAYMENT_METHODS, positiveAmountSchema, studentPaymentSchema } from "@finband/shared";
+import { positiveAmountSchema, studentPaymentSchema } from "@finband/shared";
 import { instantRangeFilter, parseCalendarDate, yearMonthRangeFilter } from "../lib/dates.js";
 import { feeStatus } from "../lib/fee-status.js";
 import { recordAudit } from "../lib/audit.js";
@@ -9,6 +9,7 @@ import { withLock } from "../lib/locks.js";
 import { formatMoneyEs } from "../lib/money-format.js";
 import { fromCents, sumCents } from "../lib/money.js";
 import { buildFeeReminder } from "../lib/reminders.js";
+import { paymentMethodError } from "../lib/payment-methods.js";
 import { prisma } from "../lib/prisma.js";
 import { feeLockKey } from "../lib/tariffs.js";
 import { teacherPayoutRoutes } from "./teacher-payouts.js";
@@ -75,7 +76,7 @@ async function pendingOnFee(
 
 const studentPaymentPatchSchema = z.object({
   amount: positiveAmountSchema.optional(),
-  method: z.enum(PAYMENT_METHODS).optional(),
+  method: z.string().min(1).optional(),
   paidAt: z.string().optional(),
   notes: z.string().optional().nullable(),
 });
@@ -120,6 +121,8 @@ export async function paymentRoutes(app: FastifyInstance) {
     const d = parsed.data;
     const fee = await prisma.studentFee.findUnique({ where: { id: d.feeId } });
     if (!fee) return reply.status(404).send({ error: "Cuota no encontrada" });
+    const methodError = await paymentMethodError(d.method);
+    if (methodError) return reply.status(400).send({ error: methodError });
 
     try {
       const payment = await withFee(fee, async (tx) => {
@@ -162,6 +165,8 @@ export async function paymentRoutes(app: FastifyInstance) {
     });
     if (!existing) return reply.status(404).send({ error: "Cobro no encontrado" });
     const d = parsed.data;
+    const methodError = await paymentMethodError(d.method, existing.method);
+    if (methodError) return reply.status(400).send({ error: methodError });
 
     try {
       const payment = await withFee(existing.fee, async (tx) => {

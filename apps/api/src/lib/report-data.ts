@@ -99,7 +99,7 @@ export async function reportStudents(monthFrom: string, monthTo: string) {
         amountPaid: true,
         student: { select: { firstName: true, lastName: true } },
         payments: {
-          select: { paidAt: true, amount: true, method: true },
+          select: { paidAt: true, amount: true, paymentMethod: { select: { label: true } } },
           orderBy: { paidAt: "asc" },
         },
       },
@@ -143,7 +143,7 @@ export async function reportStudents(monthFrom: string, monthTo: string) {
         student: acc.name,
         yearMonth: f.yearMonth,
         amount: fromCents(p.amount),
-        method: p.method,
+        method: p.paymentMethod.label,
       });
     }
   }

@@ -1,9 +1,10 @@
-import { FEE_STATUS_LABELS, PAYMENT_METHOD_LABELS } from "@finband/shared";
+import { FEE_STATUS_LABELS } from "@finband/shared";
 import { FileText, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { feeStatusBadge } from "@/lib/status";
 import { Button } from "@/components/ui/button";
 import { downloadUrl } from "@/lib/api";
+import { usePaymentMethods } from "@/hooks/usePaymentMethods";
 import { formatDate, formatMoney } from "@/lib/utils";
 
 export type StudentPaymentRow = {
@@ -46,6 +47,7 @@ export function StudentEconomicHistory({
   deleteFeePending,
   onReminder,
 }: Props) {
+  const paymentMethods = usePaymentMethods();
   return (
     <div className="space-y-6">
       {discounts.length > 0 ? (
@@ -91,11 +93,7 @@ export function StudentEconomicHistory({
                         <li key={p.id} className="flex flex-wrap items-center justify-between gap-2">
                           <span>
                             {formatDate(p.paidAt)} · {formatMoney(p.amount)} ·{" "}
-                            {
-                              PAYMENT_METHOD_LABELS[
-                                p.method as keyof typeof PAYMENT_METHOD_LABELS
-                              ]
-                            }
+                            {paymentMethods.labelOf(p.method)}
                           </span>
                           <Button asChild size="icon" variant="ghost" className="h-8 w-8">
                             <a

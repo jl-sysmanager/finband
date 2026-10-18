@@ -3,7 +3,6 @@ import { eurosToCents } from "./money.js";
 import {
   CLASS_TYPES,
   PAY_METHODS,
-  PAYMENT_METHODS,
   STUDENT_STATUSES,
   USER_ROLES,
 } from "./enums.js";
@@ -68,8 +67,19 @@ export const academicYearSchema = z.object({
 });
 
 export const categorySchema = z.object({
-  name: z.string().min(1),
+  name: z.string().trim().min(1, "Nombre requerido").max(60),
   sortOrder: z.number().int().optional(),
+});
+
+export const paymentMethodSchema = z.object({
+  label: z.string().trim().min(1, "Nombre requerido").max(40),
+  active: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+/** Nuevo orden de una lista configurable (ids en el orden deseado). */
+export const reorderSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(200),
 });
 
 export const teacherSchema = z.object({
@@ -154,7 +164,8 @@ export const incomeEntrySchema = z.object({
   concept: z.string().min(1),
   categoryId: z.string().min(1),
   amount: positiveAmountSchema,
-  method: z.enum(PAYMENT_METHODS).optional().nullable(),
+  /** Id de un método de pago configurado (se valida contra la base). */
+  method: z.string().min(1).optional().nullable(),
   notes: z.string().optional().nullable(),
 });
 
@@ -169,7 +180,8 @@ export const expenseEntrySchema = z.object({
 export const studentPaymentSchema = z.object({
   feeId: z.string().min(1),
   amount: positiveAmountSchema,
-  method: z.enum(PAYMENT_METHODS),
+  /** Id de un método de pago configurado y activo. */
+  method: z.string().min(1),
   paidAt: z.string().optional(),
   notes: z.string().optional().nullable(),
 });

@@ -18,21 +18,6 @@ export const CLASS_TYPE_LABELS: Record<ClassType, string> = {
   ENSAYO: "Ensayo",
 };
 
-export const PAYMENT_METHODS = [
-  "EFECTIVO",
-  "TRANSFERENCIA",
-  "BIZUM",
-  "TARJETA",
-] as const;
-export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
-
-export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
-  EFECTIVO: "Efectivo",
-  TRANSFERENCIA: "Transferencia",
-  BIZUM: "Bizum",
-  TARJETA: "Tarjeta",
-};
-
 /** Método de cálculo de los honorarios de un profesor (uno por profesor). */
 export const PAY_METHODS = ["MONTHLY_SALARY", "HOURLY", "PER_CLASS"] as const;
 export type PayMethod = (typeof PAY_METHODS)[number];

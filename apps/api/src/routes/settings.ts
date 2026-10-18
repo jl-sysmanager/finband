@@ -1,7 +1,8 @@
 import multipart from "@fastify/multipart";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { academicYearSchema, categorySchema, schoolSettingsSchema } from "@finband/shared";
+import { academicYearSchema, schoolSettingsSchema } from "@finband/shared";
 import { prisma } from "../lib/prisma.js";
+import { configListRoutes } from "./config-lists.js";
 import { recordAudit } from "../lib/audit.js";
 import {
   logoMimeFromFilename,
@@ -177,48 +178,5 @@ export async function settingsRoutes(app: FastifyInstance) {
     });
   });
 
-  app.get("/income-categories", async () => {
-    return prisma.incomeCategory.findMany({ orderBy: { sortOrder: "asc" } });
-  });
-
-  app.post("/income-categories", async (request, reply) => {
-    const parsed = categorySchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
-    }
-    return prisma.incomeCategory.create({ data: parsed.data });
-  });
-
-  app.delete("/income-categories/:id", async (request) => {
-    const { id } = request.params as { id: string };
-    await prisma.incomeCategory.delete({ where: { id } });
-    return { ok: true };
-  });
-
-  app.get("/expense-categories", async () => {
-    return prisma.expenseCategory.findMany({ orderBy: { sortOrder: "asc" } });
-  });
-
-  app.post("/expense-categories", async (request, reply) => {
-    const parsed = categorySchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
-    }
-    return prisma.expenseCategory.create({ data: parsed.data });
-  });
-
-  app.delete("/expense-categories/:id", async (request) => {
-    const { id } = request.params as { id: string };
-    await prisma.expenseCategory.delete({ where: { id } });
-    return { ok: true };
-  });
-
-  app.get("/payment-methods", async () => {
-    return [
-      { id: "EFECTIVO", name: "Efectivo" },
-      { id: "TRANSFERENCIA", name: "Transferencia" },
-      { id: "BIZUM", name: "Bizum" },
-      { id: "TARJETA", name: "Tarjeta" },
-    ];
-  });
+  await app.register(configListRoutes);
 }

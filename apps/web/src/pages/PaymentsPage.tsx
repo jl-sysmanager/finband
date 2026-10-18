@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FEE_STATUS_LABELS, PAYMENT_METHOD_LABELS } from "@finband/shared";
+import { FEE_STATUS_LABELS } from "@finband/shared";
 import { FileText, Layers, Trash2 } from "lucide-react";
 import { EntityDetailSheet } from "@/components/layout/EntityDetailSheet";
 import { StudentFeeDetailPanel, type StudentFeeRow } from "@/components/detail/StudentFeeDetailPanel";
@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ApiError, api, downloadUrl } from "@/lib/api";
+import { usePaymentMethods } from "@/hooks/usePaymentMethods";
 import { RegisterPaymentDialog } from "@/components/payments/RegisterPaymentDialog";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { invalidateFinanceQueries } from "@/lib/query-invalidation";
@@ -77,6 +78,7 @@ export function PaymentsPage() {
   const [selectedFeeId, setSelectedFeeId] = useState<string | null>(null);
   const [selectedPayoutId, setSelectedPayoutId] = useState<string | null>(null);
   const { confirm, dialog: confirmDialog } = useConfirm();
+  const paymentMethods = usePaymentMethods();
 
   const debouncedSearch = useDebouncedValue(search.trim());
 
@@ -337,11 +339,7 @@ export function PaymentsPage() {
                               <DataTableTd>{formatDate(p.paidAt)}</DataTableTd>
                               <DataTableTd>{formatMoney(p.amount)}</DataTableTd>
                               <DataTableTd>
-                                {
-                                  PAYMENT_METHOD_LABELS[
-                                    p.method as keyof typeof PAYMENT_METHOD_LABELS
-                                  ]
-                                }
+                                {paymentMethods.labelOf(p.method)}
                               </DataTableTd>
                               <DataTableTd className="text-right">
                                 <Button asChild size="icon" variant="ghost">

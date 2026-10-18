@@ -1,7 +1,6 @@
 import {
   ClassType,
   FeeStatus,
-  PaymentMethod,
   PayMethod,
   PayoutStatus,
   PrismaClient,
@@ -448,7 +447,7 @@ async function seedMock() {
       id: "mock-pay-1",
       feeId: feeLucia.id,
       amount: eur(99),
-      method: PaymentMethod.BIZUM,
+      method: "BIZUM",
       paidAt: monthStart(),
     },
   });
@@ -476,7 +475,7 @@ async function seedMock() {
       id: "mock-pay-2",
       feeId: feeHugo.id,
       amount: eur(50),
-      method: PaymentMethod.TRANSFERENCIA,
+      method: "TRANSFERENCIA",
       paidAt: monthStart(),
     },
   });
@@ -531,7 +530,7 @@ async function seedMock() {
         concept: "Matrícula Sofía Navarro",
         categoryId: incomeMat.id,
         amount: eur(45),
-        method: PaymentMethod.EFECTIVO,
+        method: "EFECTIVO",
       },
       update: {},
     });
