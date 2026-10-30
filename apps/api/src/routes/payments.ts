@@ -74,6 +74,10 @@ async function pendingOnFee(
   return fee.totalAmount - paid;
 }
 
+const reminderChannelSchema = z.object({
+  channel: z.enum(["whatsapp-app", "whatsapp-web", "email", "copy", "manual"]).default("manual"),
+});
+
 const studentPaymentPatchSchema = z.object({
   amount: positiveAmountSchema.optional(),
   method: z.string().min(1).optional(),
@@ -214,14 +218,18 @@ export async function paymentRoutes(app: FastifyInstance) {
 
   app.post("/student-fees/:id/reminder", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const body = (request.body ?? {}) as { channel?: string };
+    // Se registra al enviar (canal usado), no al abrir la vista previa (GET).
+    const parsed = reminderChannelSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Canal no válido", details: parsed.error.flatten() });
+    }
     try {
       const payload = await buildFeeReminder(id);
       await recordAudit(request, {
         action: "REMINDER",
         entityType: "student_fee",
         entityId: id,
-        details: { channel: body.channel ?? "manual", studentId: payload.studentId },
+        details: { channel: parsed.data.channel, studentId: payload.studentId },
       });
       return payload;
     } catch {

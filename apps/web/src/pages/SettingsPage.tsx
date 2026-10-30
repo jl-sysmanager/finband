@@ -8,6 +8,7 @@ import { DataTable, DataTableHead, DataTableRow, DataTableTd, DataTableTh } from
 import { WorkspaceShell } from "@/components/layout/PageShell";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ConfigListsTab } from "@/components/settings/ConfigListsTab";
+import { WhatsAppSettingsCard } from "@/components/settings/WhatsAppSettingsCard";
 import { ApiError, api, deleteSchoolLogo, downloadUrl, uploadBackup, uploadSchoolLogo } from "@/lib/api";
 import { SchoolLogo } from "@/components/layout/SchoolLogo";
 import { schoolLogoUrl } from "@/lib/school-branding";
@@ -292,6 +293,7 @@ export function SettingsPage() {
           </Button>
         ) : null}
       </form>
+        <WhatsAppSettingsCard />
         </TabsContent>
 
         <TabsContent value="listas">

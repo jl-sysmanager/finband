@@ -55,9 +55,11 @@ export async function buildFeeReminder(feeId: string) {
       ? `mailto:${encodeURIComponent(student.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
       : null;
 
-  const waPhone = normalizePhoneForWhatsApp(student.phone);
-  const whatsapp = waPhone
-    ? `https://wa.me/${waPhone}?text=${encodeURIComponent(body)}`
+  // Solo dígitos con prefijo internacional: la web arma el enlace a la aplicación o a
+  // WhatsApp Web según lo que use cada equipo.
+  const whatsappPhone = normalizePhoneForWhatsApp(student.phone);
+  const whatsapp = whatsappPhone
+    ? `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(body)}`
     : null;
 
   return {
@@ -72,6 +74,7 @@ export async function buildFeeReminder(feeId: string) {
     body,
     mailto,
     whatsapp,
+    whatsappPhone,
   };
 }
 
