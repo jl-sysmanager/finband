@@ -1,6 +1,7 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Copy, Mail, MessageCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -9,8 +10,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useWhatsAppMode } from "@/hooks/useWhatsAppMode";
 import { ApiError, api } from "@/lib/api";
 import { formatMoney } from "@/lib/utils";
+import { effectiveWhatsAppMode, openWhatsApp } from "@/lib/whatsapp";
+import { toast } from "@/stores/toast";
 
 type ReminderPayload = {
   feeId: string;
@@ -19,8 +23,10 @@ type ReminderPayload = {
   subject: string;
   body: string;
   mailto: string | null;
-  whatsapp: string | null;
+  whatsappPhone: string | null;
 };
+
+type Channel = "whatsapp-app" | "whatsapp-web" | "email";
 
 type Props = {
   feeId: string | null;
@@ -30,28 +36,37 @@ type Props = {
 
 export function FeeReminderDialog({ feeId, open, onOpenChange }: Props) {
   const [copied, setCopied] = useState(false);
+  // Se lee para que el texto del modo se actualice si se cambia en Configuración.
+  useWhatsAppMode();
+  const mode = effectiveWhatsAppMode();
 
-  const load = useMutation({
-    mutationFn: (id: string) =>
-      api<ReminderPayload>(`/payments/student-fees/${id}/reminder`, {
-        method: "POST",
-        body: JSON.stringify({ channel: "dialog" }),
-      }),
+  // Vista previa: no deja rastro. El recordatorio se registra al enviarlo.
+  const preview = useQuery({
+    queryKey: ["fee-reminder", feeId],
+    queryFn: () => api<ReminderPayload>(`/payments/student-fees/${feeId}/reminder`),
+    enabled: open && !!feeId,
+    staleTime: 0,
   });
 
-  useEffect(() => {
-    if (open && feeId) {
-      load.mutate(feeId);
-    }
-    if (!open) {
-      load.reset();
-      setCopied(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset when dialog closes
-  }, [open, feeId]);
+  const record = useMutation({
+    mutationFn: (channel: Channel) =>
+      api(`/payments/student-fees/${feeId}/reminder`, {
+        method: "POST",
+        body: JSON.stringify({ channel }),
+      }),
+    onError: () => toast("No se pudo registrar el envío en la auditoría", "error"),
+  });
 
-  const data = load.data;
-  const error = load.error instanceof ApiError ? load.error.message : load.error ? "Error" : null;
+  const data = preview.data;
+  const error =
+    preview.error instanceof ApiError ? preview.error.message : preview.error ? "Error" : null;
+
+  function sendWhatsApp() {
+    if (!data) return;
+    // Primero se abre WhatsApp (dentro del clic, para que no lo bloquee el navegador).
+    const used = openWhatsApp(data.whatsappPhone, data.body);
+    record.mutate(used === "app" ? "whatsapp-app" : "whatsapp-web");
+  }
 
   async function copyText() {
     if (!data?.body) return;
@@ -61,12 +76,18 @@ export function FeeReminderDialog({ feeId, open, onOpenChange }: Props) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) setCopied(false);
+        onOpenChange(o);
+      }}
+    >
       <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>Recordatorio de cuota</DialogTitle>
         </DialogHeader>
-        {load.isPending ? (
+        {preview.isLoading ? (
           <p className="text-sm text-muted-foreground">Preparando mensaje…</p>
         ) : error ? (
           <p className="text-sm text-destructive">{error}</p>
@@ -80,28 +101,36 @@ export function FeeReminderDialog({ feeId, open, onOpenChange }: Props) {
               {data.body}
             </pre>
             <div className="flex flex-wrap gap-2">
+              {data.whatsappPhone ? (
+                <Button size="sm" onClick={sendWhatsApp}>
+                  <MessageCircle className="h-4 w-4" /> WhatsApp
+                </Button>
+              ) : (
+                <span className="text-xs text-muted-foreground">Sin teléfono válido</span>
+              )}
               {data.mailto ? (
                 <Button size="sm" variant="outline" asChild>
-                  <a href={data.mailto}>
+                  <a href={data.mailto} onClick={() => record.mutate("email")}>
                     <Mail className="h-4 w-4" /> Email
                   </a>
                 </Button>
               ) : (
                 <span className="text-xs text-muted-foreground">Sin email del alumno</span>
               )}
-              {data.whatsapp ? (
-                <Button size="sm" variant="outline" asChild>
-                  <a href={data.whatsapp} target="_blank" rel="noreferrer">
-                    <MessageCircle className="h-4 w-4" /> WhatsApp
-                  </a>
-                </Button>
-              ) : (
-                <span className="text-xs text-muted-foreground">Sin teléfono válido</span>
-              )}
               <Button size="sm" variant="outline" onClick={() => void copyText()}>
                 <Copy className="h-4 w-4" /> {copied ? "Copiado" : "Copiar texto"}
               </Button>
             </div>
+            {data.whatsappPhone ? (
+              <p className="text-xs text-muted-foreground">
+                WhatsApp se abrirá en{" "}
+                {mode === "app" ? "la aplicación instalada" : "WhatsApp Web (siempre la misma pestaña)"}.
+                Revise el mensaje y pulse «Enviar».{" "}
+                <Link to="/configuracion" className="underline" onClick={() => onOpenChange(false)}>
+                  Cambiar
+                </Link>
+              </p>
+            ) : null}
           </div>
         ) : null}
         <DialogFooter>
